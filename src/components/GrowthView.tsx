@@ -197,15 +197,17 @@ export function GrowthView() {
                         className="absolute left-0 top-0 h-full rounded-md bg-gradient-to-r from-primary/70 to-amber-400/70"
                         style={{ width: `${Math.max(w, 3)}%` }}
                       />
-                      <div className="absolute inset-0 flex items-center justify-between px-2">
+                      <div className="absolute inset-0 flex items-center px-2">
                         <span className="text-[11px] font-bold tabular-nums text-foreground">
                           +{maxXp.toLocaleString()}
                         </span>
-                        <span className="text-[10px] tabular-nums text-muted-foreground">
-                          {occurrences}×
-                        </span>
                       </div>
                     </div>
+                    {/* Outside the bar: the largest row fills 100% width, so an
+                        overlaid count sat on the gradient with no contrast. */}
+                    <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                      {occurrences}×
+                    </span>
                   </div>
                 );
               })}

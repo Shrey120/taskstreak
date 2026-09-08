@@ -256,8 +256,8 @@ export function StackView() {
                   <span className="text-sm truncate flex-1">{it.title}</span>
                   <button
                     onClick={() => remove(it.id)}
-                    className="opacity-0 group-hover:opacity-100 text-destructive/70 hover:text-destructive transition-opacity"
-                    aria-label="Remove"
+                    className="p-1 text-destructive/70 transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
+                    aria-label={`Remove ${it.title}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

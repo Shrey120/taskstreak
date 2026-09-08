@@ -6,6 +6,7 @@ import { ClipboardList, CheckCircle2, Circle, MinusCircle, XCircle, SkipForward,
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { canAffordDayOff } from '@/lib/periodUtils';
 
 interface TimelineViewProps {
   selectedDate: Date;
@@ -373,24 +374,10 @@ function ParentTaskRow({
           ? 'partial'
           : 'none';
 
-  let canSkip = false;
-  if (task.frequencyType === 'at-least-weekly' && !isCompleted && !isSkipped && !dayOff) {
-    const quota = task.frequencyValue as number;
-    const day = selectedDate.getDay(); // 0=Sun..6=Sat
-    const dayIdxMonFirst = ((day + 6) % 7) + 1; // Mon=1..Sun=7
-    const daysLeftIncludingToday = 7 - dayIdxMonFirst + 1;
-    const monday = new Date(selectedDate);
-    monday.setDate(monday.getDate() - (dayIdxMonFirst - 1));
-    const mondayStr = format(monday, 'yyyy-MM-dd');
-    const sunday = new Date(monday);
-    sunday.setDate(sunday.getDate() + 6);
-    const sundayStr = format(sunday, 'yyyy-MM-dd');
-    const doneThisWeek = task.completions.filter(
-      (c) => c.earnedAmount > 0 && c.date >= mondayStr && c.date <= sundayStr,
-    ).length;
-    const remainingRequired = Math.max(0, quota - doneThisWeek);
-    canSkip = daysLeftIncludingToday - 1 >= remainingRequired;
-  }
+  // Shared with TaskCard via periodUtils — this was previously an inline copy
+  // that only handled at-least-weekly and used its own week boundary.
+  const canSkip =
+    !isCompleted && !isSkipped && !dayOff && canAffordDayOff(task, selectedDate);
 
   const sortedSubs = [...task.subtasks].sort((a, b) =>
     (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'),

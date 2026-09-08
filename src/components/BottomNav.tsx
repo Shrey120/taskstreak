@@ -10,7 +10,8 @@ export function BottomNav({ view, onSelect }: BottomNavProps) {
   return (
     <nav
       className={cn(
-        'fixed inset-x-0 bottom-0 z-40 sm:hidden',
+        // Hidden from lg up, where AppSidebar carries every destination instead.
+      'fixed inset-x-0 bottom-0 z-40 lg:hidden',
         'safe-bottom safe-x border-t border-border/50 bg-background/90 backdrop-blur-xl',
       )}
     >
@@ -27,7 +28,7 @@ export function BottomNav({ view, onSelect }: BottomNavProps) {
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-1 py-2.5',
                 'min-h-[56px] touch-manipulation transition-colors',
-                active ? 'text-primary' : 'text-muted-foreground active:text-foreground',
+                active ? 'text-primary' : 'text-muted-foreground hover:text-foreground active:text-foreground',
               )}
             >
               <span

@@ -27,6 +27,7 @@ export function WithdrawDialog() {
   const [reason, setReason] = useState('');
   const [history, setHistory] = useState<WithdrawHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const deviceId = user?.device_id || '';
 
@@ -61,37 +62,55 @@ export function WithdrawDialog() {
       toast({ title: 'Invalid amount', variant: 'destructive' });
       return;
     }
+    if (withdrawAmount > wallet) {
+      toast({
+        title: 'Not enough in the wallet',
+        description: `You can withdraw up to ₹${wallet.toFixed(2)}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    // Save to history first
+    setSubmitting(true);
+    // Move the money first. Writing history before the balance changed left an
+    // orphan ledger row behind whenever the wallet update failed.
+    const success = await withdrawFromWallet(withdrawAmount);
+    if (!success) {
+      setSubmitting(false);
+      toast({ title: 'Withdrawal failed', variant: 'destructive' });
+      return;
+    }
+
     if (deviceId) {
       const { error: historyError } = await supabase
         .from('withdraw_history')
         .insert({ device_id: deviceId, amount: withdrawAmount, reason: reason.trim() || null });
-
       if (historyError) {
         console.error('Error saving history:', historyError);
-        toast({ title: 'Failed to save withdrawal', variant: 'destructive' });
-        return;
+        toast({
+          title: 'Withdrawal went through',
+          description: "It couldn't be added to your history, though.",
+        });
       }
     }
 
-    const success = await withdrawFromWallet(withdrawAmount);
-    if (success) {
-      toast({ title: `₹${withdrawAmount.toFixed(2)} withdrawn successfully!` });
-      setAmount('');
-      setReason('');
-      loadHistory(); // Refresh history
-    } else {
-      toast({ title: 'Withdrawal failed', variant: 'destructive' });
-    }
+    toast({ title: `₹${withdrawAmount.toFixed(2)} withdrawn successfully!` });
+    setAmount('');
+    setReason('');
+    setSubmitting(false);
+    loadHistory();
   };
+
+  const parsedAmount = parseFloat(amount);
+  const amountIsValid = !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= wallet;
+  const overBalance = !isNaN(parsedAmount) && parsedAmount > wallet;
 
   const totalWithdrawn = history.reduce((sum, h) => sum + Number(h.amount), 0);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1">
+        <Button variant="outline" size="sm" className="w-full gap-1.5" disabled={wallet <= 0}>
           <ArrowDownLeft className="w-4 h-4" />
           Withdraw
         </Button>
@@ -123,8 +142,14 @@ export function WithdrawDialog() {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="0"
+                max={wallet}
                 step="0.01"
               />
+              {overBalance && (
+                <p className="text-xs text-destructive">
+                  That's more than the ₹{wallet.toFixed(2)} available.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="reason">Reason (optional)</Label>
@@ -137,8 +162,8 @@ export function WithdrawDialog() {
                 maxLength={100}
               />
             </div>
-            <Button onClick={handleWithdraw} className="w-full" disabled={!amount || parseFloat(amount) <= 0}>
-              Withdraw
+            <Button onClick={handleWithdraw} className="w-full" disabled={!amountIsValid || submitting}>
+              {submitting ? 'Withdrawing…' : 'Withdraw'}
             </Button>
           </TabsContent>
           

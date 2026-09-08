@@ -2,9 +2,9 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/AuthContext';
 import { WalletDisplay } from '@/components/WalletDisplay';
 import { XpDisplay } from '@/components/XpDisplay';
-import { CORE_TABS, METRIC_TABS, type ViewType } from '@/lib/navItems';
+import { NavSections } from '@/components/NavSections';
+import { type ViewType } from '@/lib/navItems';
 import { LogOut, Sparkles } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface AppNavDrawerProps {
   open: boolean;
@@ -13,44 +13,10 @@ interface AppNavDrawerProps {
   onSelect: (view: ViewType) => void;
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="px-4 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/80">
-      {children}
-    </p>
-  );
-}
-
-function NavRow({
-  label,
-  icon: Icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-medium',
-        'min-h-[48px] touch-manipulation transition-colors',
-        active
-          ? 'bg-primary/15 text-primary'
-          : 'text-muted-foreground active:bg-secondary/70 focus-visible:bg-secondary/70',
-      )}
-      aria-current={active ? 'page' : undefined}
-    >
-      <Icon className={cn('h-5 w-5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} />
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
-
+/**
+ * Navigation for phones and tablets only. On lg+ the same destinations live in
+ * the always-visible AppSidebar, and this drawer is never mounted.
+ */
 export function AppNavDrawer({ open, onOpenChange, view, onSelect }: AppNavDrawerProps) {
   const { user, logout } = useAuth();
 
@@ -61,10 +27,7 @@ export function AppNavDrawer({ open, onOpenChange, view, onSelect }: AppNavDrawe
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="left"
-        className="flex w-[300px] flex-col gap-0 p-0 sm:w-[340px]"
-      >
+      <SheetContent side="left" className="flex w-[300px] flex-col gap-0 p-0 sm:w-[340px]">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
 
         {/* Brand + account */}
@@ -87,35 +50,7 @@ export function AppNavDrawer({ open, onOpenChange, view, onSelect }: AppNavDrawe
             <WalletDisplay />
             <XpDisplay />
           </div>
-
-          <SectionLabel>Views</SectionLabel>
-          <nav className="space-y-1 px-2">
-            {CORE_TABS.map((t) => (
-              <NavRow
-                key={t.id}
-                label={t.label}
-                icon={t.icon}
-                active={view === t.id}
-                onClick={() => pick(t.id)}
-              />
-            ))}
-          </nav>
-
-          <SectionLabel>Habit metrics</SectionLabel>
-          <nav className="space-y-1 px-2">
-            {METRIC_TABS.map((t) => {
-              const id = `metric:${t.id}` as ViewType;
-              return (
-                <NavRow
-                  key={t.id}
-                  label={t.label}
-                  icon={t.icon}
-                  active={view === id}
-                  onClick={() => pick(id)}
-                />
-              );
-            })}
-          </nav>
+          <NavSections view={view} onSelect={pick} />
         </div>
 
         {/* Pinned footer */}

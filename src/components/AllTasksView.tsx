@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Trash2, Flame, TrendingUp, Zap, Award, Pencil, Clock, DollarSign, BarChart3, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown, TrendingDown, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EditTaskDialog } from './EditTaskDialog';
+import { ConfirmDeleteTask } from './ConfirmDeleteTask';
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual } from 'date-fns';
 import { getStreakCycleLength } from '@/lib/streakUtils';
 import {
@@ -27,6 +28,7 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [analyticsTask, setAnalyticsTask] = useState<Task | null>(null);
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [sortOption, setSortOption] = useState<SortOption>('none');
 
   const handleEdit = (task: Task) => {
@@ -212,12 +214,12 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {sortedTasks.map((task) => (
             <TaskDetailCard 
               key={task.id} 
               task={task} 
-              onDelete={() => deleteTask(task.id)} 
+              onDelete={() => setDeletingTask(task)}
               onEdit={() => handleEdit(task)}
               onViewAnalytics={() => setAnalyticsTask(task)}
               onOpen={onSelectHabit ? () => onSelectHabit(task) : undefined}
@@ -233,10 +235,20 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
         onOpenChange={setEditDialogOpen} 
       />
 
-      <TaskAnalyticsDialog 
-        task={analyticsTask} 
-        open={!!analyticsTask} 
-        onOpenChange={(open) => !open && setAnalyticsTask(null)} 
+      <TaskAnalyticsDialog
+        task={analyticsTask}
+        open={!!analyticsTask}
+        onOpenChange={(open) => !open && setAnalyticsTask(null)}
+      />
+
+      <ConfirmDeleteTask
+        taskName={deletingTask?.name ?? null}
+        completionCount={deletingTask?.completions.length ?? 0}
+        onOpenChange={(open) => !open && setDeletingTask(null)}
+        onConfirm={() => {
+          if (deletingTask) deleteTask(deletingTask.id);
+          setDeletingTask(null);
+        }}
       />
     </>
   );
@@ -264,23 +276,7 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
   const totalEarnings = task.completions.reduce((sum, c) => sum + c.earnedAmount, 0);
 
   return (
-    <div className="relative p-4 rounded-xl bg-card border border-border shadow-card transition-all duration-300 hover:shadow-soft group">
-      {/* Hourly badge */}
-      {task.isHourly && (
-        <div className="absolute -top-2 -left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-semibold border border-primary/30">
-          <Clock className="w-3 h-3" />
-          Hourly
-        </div>
-      )}
-
-      {/* Streak badge */}
-      {task.currentStreak > 0 && (
-        <div className="absolute -top-2 -right-2 flex items-center gap-1 px-2 py-0.5 rounded-full gradient-primary text-primary-foreground text-xs font-semibold shadow-glow">
-          <Flame className="w-3 h-3" />
-          {task.currentStreak}
-        </div>
-      )}
-
+    <div className="relative p-4 rounded-xl bg-card border border-border shadow-card transition-colors duration-200 hover:border-primary/30 group">
       <div className="space-y-3">
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
@@ -297,15 +293,41 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
             >
               {task.name}
             </button>
-            <p className="text-xs text-muted-foreground">{getFrequencyLabel(task)}</p>
+            {/*
+              The streak and hourly badges used to be absolutely positioned at
+              -top-2/-left-2 — outside the card — where they overlapped whichever
+              card sat next to them in the grid. Inline here they also keep every
+              card's title on the same baseline.
+            */}
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-xs text-muted-foreground">{getFrequencyLabel(task)}</p>
+              {task.isHourly && (
+                <span className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-1.5 py-px text-[10px] font-semibold text-primary">
+                  <Clock className="w-2.5 h-2.5" />
+                  Hourly
+                </span>
+              )}
+              {task.currentStreak > 0 && (
+                <span className="flex items-center gap-1 rounded-full gradient-primary px-1.5 py-px text-[10px] font-bold tabular-nums text-primary-foreground">
+                  <Flame className="w-2.5 h-2.5" />
+                  {task.currentStreak}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          {/*
+            These were opacity-0 until :group-hover, which made edit, delete and
+            analytics unreachable on any touch device. They are now always
+            visible where there is no hover, and reveal on hover on desktop.
+          */}
+          <div className="flex items-center gap-0.5 shrink-0">
             <Button
               size="icon"
               variant="ghost"
               onClick={onViewAnalytics}
-              className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
-              title="View Analytics"
+              aria-label="View analytics"
+              title="View analytics"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-opacity hover:text-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
             >
               <BarChart3 className="w-4 h-4" />
             </Button>
@@ -313,7 +335,9 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
               size="icon"
               variant="ghost"
               onClick={onEdit}
-              className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+              aria-label="Edit task"
+              title="Edit task"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-opacity hover:text-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
             >
               <Pencil className="w-4 h-4" />
             </Button>
@@ -321,7 +345,9 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
               size="icon"
               variant="ghost"
               onClick={onDelete}
-              className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              aria-label="Delete task"
+              title="Delete task"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
             >
               <Trash2 className="w-4 h-4" />
             </Button>

@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
 import { getStreakCycleLength, computeCurrentStreak, computeAtLeastRawStreak } from '@/lib/streakUtils';
+import { periodUnitFor, successesInPeriod } from '@/lib/periodUtils';
 import {
   TraitId, TRAITS, isTraitId, baseXpForDifficulty, baseXpForCompletion,
 } from '@/lib/xpUtils';
@@ -72,6 +73,23 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 
 const EMPTY_TRAIT_XP: Record<TraitId, number> = TRAITS.reduce((m, t) => { m[t.id] = 0; return m; }, {} as Record<TraitId, number>);
 
+/**
+ * Read a persisted `taskId|date` key set. Kept as a plain function (not state)
+ * so `loadData` can read the *current* stored value: the effects that hydrate
+ * dayOffSet / subtaskMissedSet flush in the same commit as the effect that
+ * calls loadData, so reading those state variables there would see the empty
+ * initial sets and the on-load streak repair would ignore every day off.
+ */
+function readKeySet(storageKey: string): Set<string> {
+  if (!storageKey) return new Set();
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [wallet, setWallet] = useState(0);
@@ -95,21 +113,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const missedStorageKey = deviceId ? `submissed:${deviceId}` : '';
 
   useEffect(() => {
-    if (!dayOffStorageKey) { setDayOffSet(new Set()); return; }
-    try {
-      const raw = localStorage.getItem(dayOffStorageKey);
-      if (raw) setDayOffSet(new Set(JSON.parse(raw) as string[]));
-      else setDayOffSet(new Set());
-    } catch { setDayOffSet(new Set()); }
+    setDayOffSet(readKeySet(dayOffStorageKey));
   }, [dayOffStorageKey]);
 
   useEffect(() => {
-    if (!missedStorageKey) { setSubtaskMissedSet(new Set()); return; }
-    try {
-      const raw = localStorage.getItem(missedStorageKey);
-      if (raw) setSubtaskMissedSet(new Set(JSON.parse(raw) as string[]));
-      else setSubtaskMissedSet(new Set());
-    } catch { setSubtaskMissedSet(new Set()); }
+    setSubtaskMissedSet(readKeySet(missedStorageKey));
   }, [missedStorageKey]);
 
   const persistDayOff = (next: Set<string>) => {
@@ -253,15 +261,20 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         // Build per-task excluded-date sets (day-off + any-subtask-missed dates
         // where the task wasn't fully completed) so streak recalc treats them
         // as streak-neutral.
+        // Read straight from storage — see readKeySet: the hydrating effects
+        // have not committed by the time this runs.
+        const storedDayOff = readKeySet(dayOffStorageKey);
+        const storedMissed = readKeySet(missedStorageKey);
+
         const excludedByTask = new Map<string, Set<string>>();
-        for (const key of dayOffSet) {
+        for (const key of storedDayOff) {
           const [tid, d] = key.split('|');
           if (!excludedByTask.has(tid)) excludedByTask.set(tid, new Set());
           excludedByTask.get(tid)!.add(d);
         }
         const subtaskToTask = new Map<string, string>();
         tasksWithCompletions.forEach((t) => t.subtasks.forEach((s) => subtaskToTask.set(s.id, t.id)));
-        for (const key of subtaskMissedSet) {
+        for (const key of storedMissed) {
           const [sid, d] = key.split('|');
           const tid = subtaskToTask.get(sid);
           if (!tid) continue;
@@ -735,7 +748,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const withdrawFromWallet = async (amount: number) => {
     if (!deviceId) return false;
-    if (amount <= 0) return false;
+    if (!Number.isFinite(amount) || amount <= 0) return false;
+    // Failures can drive the wallet negative on purpose, but a withdrawal is
+    // taking real money out — it can never exceed what's actually there.
+    if (amount > wallet) return false;
 
     const newBalance = wallet - amount;
     const { error } = await supabase
@@ -753,7 +769,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteTask = async (taskId: string) => {
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+    if (!deviceId) return;
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', taskId)
+      .eq('device_id', deviceId);
 
     if (error) {
       console.error('Error deleting task:', error);
@@ -946,139 +967,57 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   };
 
 
+  /**
+   * Is this task on the schedule for `date`, ignoring completion state?
+   * For flexible ("at least N per period") tasks this means the period quota
+   * has not been met yet.
+   */
+  const isScheduledOn = (task: Task, date: Date, dateStr: string): boolean => {
+    switch (task.frequencyType) {
+      case 'weekly':
+        return (task.frequencyValue as number[]).includes(date.getDay());
+      case 'monthly':
+        return (task.frequencyValue as number[]).includes(date.getDate());
+      case 'specific-date':
+        return task.frequencyValue === dateStr;
+      case 'specific-day':
+        return task.frequencyValue === format(date, 'EEEE').toLowerCase();
+      case 'at-least-weekly':
+      case 'at-least-monthly': {
+        const unit = periodUnitFor(task)!;
+        return successesInPeriod(task, dateStr, unit) < (task.frequencyValue as number);
+      }
+      default:
+        return false;
+    }
+  };
+
   const getTasksForDate = (date: Date): Task[] => {
-    const dayOfWeek = date.getDay();
-    const dayOfMonth = date.getDate();
     const dateStr = format(date, 'yyyy-MM-dd');
-    const dayName = format(date, 'EEEE').toLowerCase();
-
-    // Helper to get week start (Sunday) for a given date
-    const getWeekStart = (d: Date): Date => {
-      const result = new Date(d);
-      result.setDate(result.getDate() - result.getDay());
-      result.setHours(0, 0, 0, 0);
-      return result;
-    };
-
-    // Helper to get month start for a given date
-    const getMonthStart = (d: Date): Date => {
-      return new Date(d.getFullYear(), d.getMonth(), 1);
-    };
 
     return tasks.filter((task) => {
       if (task.startDate > dateStr) return false;
-      
+
       const completion = task.completions.find((c) => c.date === dateStr);
-      
-      // If task was completed (earned > 0), don't show it
+      // Completed for money — nothing left to do today.
       if (completion && completion.earnedAmount > 0) return false;
-      
-      // If task was skipped (earned = 0), ALWAYS show it regardless of frequency
-      if (completion && completion.earnedAmount === 0) return true;
+      // Failed/skipped — keep it visible so the user can undo it.
+      if (completion) return true;
 
-      // Otherwise, check frequency to determine if task should appear on this date
-      switch (task.frequencyType) {
-        case 'weekly':
-          return (task.frequencyValue as number[]).includes(dayOfWeek);
-        case 'monthly':
-          return (task.frequencyValue as number[]).includes(dayOfMonth);
-        case 'specific-date':
-          return task.frequencyValue === dateStr;
-        case 'specific-day':
-          return task.frequencyValue === dayName;
-        case 'at-least-weekly': {
-          // Note: "day off" marks the day as skipped visually (yellow) but
-          // keeps the task visible so the user can see & undo it.
-
-          const weekStart = getWeekStart(date);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          const completionsThisWeek = task.completions.filter((c) => {
-            const cDate = new Date(c.date);
-            return c.earnedAmount > 0 && cDate >= weekStart && cDate <= weekEnd;
-          }).length;
-          const requiredPerWeek = task.frequencyValue as number;
-          return completionsThisWeek < requiredPerWeek;
-        }
-        case 'at-least-monthly': {
-          // Count completions this month (only successful ones with earnedAmount > 0)
-          const monthStart = getMonthStart(date);
-          const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-          
-          const completionsThisMonth = task.completions.filter((c) => {
-            const cDate = new Date(c.date);
-            return c.earnedAmount > 0 && cDate >= monthStart && cDate <= monthEnd;
-          }).length;
-          
-          const requiredPerMonth = task.frequencyValue as number;
-          // Hide if already completed required times this month
-          return completionsThisMonth < requiredPerMonth;
-        }
-        default:
-          return false;
-      }
+      return isScheduledOn(task, date, dateStr);
     });
   };
 
   const getAllTasksForDate = (date: Date): Task[] => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const dayOfWeek = date.getDay();
-    const dayOfMonth = date.getDate();
-    const dayName = format(date, 'EEEE').toLowerCase();
-
-    const getWeekStart = (d: Date): Date => {
-      const result = new Date(d);
-      result.setDate(result.getDate() - result.getDay());
-      result.setHours(0, 0, 0, 0);
-      return result;
-    };
-
-    const getMonthStart = (d: Date): Date => {
-      return new Date(d.getFullYear(), d.getMonth(), 1);
-    };
 
     return tasks.filter((task) => {
       if (task.startDate > dateStr) return false;
+      // Unlike getTasksForDate, anything with a record for the day stays on
+      // screen — the timeline shows completed rows too.
+      if (task.completions.some((c) => c.date === dateStr)) return true;
 
-      const completion = task.completions.find((c) => c.date === dateStr);
-      // If skipped, show it
-      if (completion && completion.earnedAmount === 0) return true;
-      // If completed, still show it (unlike getTasksForDate)
-      if (completion && completion.earnedAmount > 0) return true;
-
-      switch (task.frequencyType) {
-        case 'weekly':
-          return (task.frequencyValue as number[]).includes(dayOfWeek);
-        case 'monthly':
-          return (task.frequencyValue as number[]).includes(dayOfMonth);
-        case 'specific-date':
-          return task.frequencyValue === dateStr;
-        case 'specific-day':
-          return task.frequencyValue === dayName;
-        case 'at-least-weekly': {
-          const weekStart = getWeekStart(date);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          const completionsThisWeek = task.completions.filter((c) => {
-            const cDate = new Date(c.date);
-            return c.earnedAmount > 0 && cDate >= weekStart && cDate <= weekEnd;
-          }).length;
-          const requiredPerWeek = task.frequencyValue as number;
-          return completionsThisWeek < requiredPerWeek || task.completions.some((c) => c.date === dateStr);
-        }
-        case 'at-least-monthly': {
-          const monthStart = getMonthStart(date);
-          const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-          const completionsThisMonth = task.completions.filter((c) => {
-            const cDate = new Date(c.date);
-            return c.earnedAmount > 0 && cDate >= monthStart && cDate <= monthEnd;
-          }).length;
-          const requiredPerMonth = task.frequencyValue as number;
-          return completionsThisMonth < requiredPerMonth || task.completions.some((c) => c.date === dateStr);
-        }
-        default:
-          return false;
-      }
+      return isScheduledOn(task, date, dateStr);
     });
   };
 
@@ -1177,7 +1116,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     persistMissed(next);
 
     // Deduct this subtask's share from wallet
-    let newWallet = wallet - share;
+    const newWallet = wallet - share;
 
     // If ALL subtasks are now missed → treat as full-task failure:
     // record a zero-earning completion + reset streak. Wallet already
