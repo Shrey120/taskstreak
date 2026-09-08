@@ -1,0 +1,2 @@
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS traits text[] NOT NULL DEFAULT ARRAY['discipline']::text[];
+UPDATE public.tasks SET traits = ARRAY[trait] WHERE trait IS NOT NULL AND (traits IS NULL OR array_length(traits, 1) IS NULL OR traits = ARRAY['discipline']::text[]);

@@ -1,0 +1,1 @@
+ALTER TABLE public.tasks ADD COLUMN scheduled_time time DEFAULT NULL;

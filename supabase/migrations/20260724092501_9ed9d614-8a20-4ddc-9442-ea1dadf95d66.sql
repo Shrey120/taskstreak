@@ -1,0 +1,1 @@
+ALTER TABLE public.push_subscriptions ADD COLUMN IF NOT EXISTS tz_offset_minutes INTEGER;
