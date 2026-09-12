@@ -3,7 +3,10 @@ import { DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { useTasks } from '@/contexts/TaskContext';
 import { buildLegacyStats } from '@/lib/legacy';
 import { cn } from '@/lib/utils';
-import { Check, Coins, Flame, Repeat, Trophy, XCircle, Infinity as InfinityIcon } from 'lucide-react';
+import {
+  Check, Coins, Flame, Repeat, Trophy, XCircle, Infinity as InfinityIcon,
+  Compass, CalendarDays, Palmtree, Bell, Wallet, ListChecks,
+} from 'lucide-react';
 
 const BAND = 10000;
 
@@ -60,9 +63,41 @@ export function CodexView() {
         <div className="text-xs uppercase tracking-widest text-muted-foreground">Reference</div>
         <div className="font-display text-2xl font-bold neon-text">Codex</div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Exactly how money, XP, streaks, and levels are calculated.
+          Every screen, every rule, every number — exactly how this app works.
         </p>
       </div>
+
+      {/* Screens */}
+      <section>
+        <SectionTitle icon={<Compass className="h-3.5 w-3.5" />}>Screens</SectionTitle>
+        <div className="space-y-2 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Row label="Timeline">
+            Today's schedule in time order. Complete (✓), fail (✗) or skip each task here.
+            Tasks already done for money drop off; failed ones stay so you can undo them.
+          </Row>
+          <Row label="Stack">
+            A capture list for anything not yet a habit. One card at a time — finish it, or send
+            it to the back. No money, no XP, no streaks.
+          </Row>
+          <Row label="All tasks">
+            Every task with its schedule, streak and stats. Edit or delete from here, and open
+            Vacation from the button at the top.
+          </Row>
+          <Row label="Growth">
+            Your seven traits as levels, plus overall Standing.
+          </Row>
+          <Row label="Report">
+            Weekly or monthly System Report — every figure paired with the period before it.
+          </Row>
+          <Row label="Codex">
+            This page.
+          </Row>
+          <Row label="Metrics">
+            Eight per-task breakdowns: Earned, Best streak, Rate, Skipped, Heatmap, 6-month,
+            Reward and Loss.
+          </Row>
+        </div>
+      </section>
 
       {/* Task types */}
       <section>
@@ -145,21 +180,81 @@ export function CodexView() {
         </div>
       </section>
 
+      {/* Schedules */}
+      <section>
+        <SectionTitle icon={<CalendarDays className="h-3.5 w-3.5" />}>Schedules</SectionTitle>
+        <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Block title="Specific days in a week">
+            Pick any days. Preset chips fill Everyday, Weekdays or Weekends in one tap, and the
+            bar chart underneath shows how many tasks already land on each day so you can see an
+            overloaded Monday before you create it.
+          </Block>
+          <Block title="Every N weeks on selected days">
+            Every other week, every third, and so on. The week you create it in is the anchor, and
+            editing the task keeps that anchor so the on-weeks never shift.
+          </Block>
+          <Block title="Days of the month">
+            Pick dates 1–31. A date longer than the month{' '}
+            <span className="text-primary font-semibold">clamps to its last day</span> — the 31st
+            fires on 30 April and 28/29 February instead of silently never running.
+          </Block>
+          <Block title="At least N per week / month">
+            A quota, not fixed days. Do it on any days you like; once the quota is met the task{' '}
+            <span className="text-primary font-semibold">disappears for the rest of that period</span>{' '}
+            instead of nagging. Only missing a whole period's quota breaks the streak.
+          </Block>
+          <Block title="One-time date">
+            A single calendar date. Due once, never again, and it has no streak cycle.
+          </Block>
+          <Block title="Subtasks">
+            A task can hold timed steps. The parent only completes when every step is done, and
+            each step pays an equal share. A step can be marked missed on its own — that is
+            streak-neutral, not a failure.
+          </Block>
+        </div>
+      </section>
+
+      {/* Vacation */}
+      <section>
+        <SectionTitle icon={<Palmtree className="h-3.5 w-3.5" />}>Vacation &amp; pauses</SectionTitle>
+        <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Block title="What a pause does">
+            Set a date range from <B>All tasks → Vacation</B>. Inside it every task is off the
+            hook: nothing appears on those days, nothing can be failed, and{' '}
+            <span className="text-primary font-semibold">no streak breaks</span>. One holiday
+            cannot wipe out every habit at once.
+          </Block>
+          <Block title="How it affects the numbers">
+            Paused days are removed from the denominator everywhere — they are not misses. The
+            Report counts them separately and excludes them from consistency, and a raise cannot
+            be earned on a paused day because there was nothing due to clear.
+          </Block>
+          <Block title="Skip vs. fail vs. pause">
+            <B>Skip</B> marks one task streak-neutral for one day — for a quota task you will
+            still hit, or a genuine one-off reason. <B>Fail (✗)</B> costs money and XP and breaks
+            the streak. <B>Pause</B> covers every task across a date range. Only Fail is a
+            penalty; the other two cost nothing.
+          </Block>
+        </div>
+      </section>
+
       {/* Streaks */}
       <section>
         <SectionTitle icon={<Repeat className="h-3.5 w-3.5" />}>Streaks</SectionTitle>
         <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
           <Block title="Cycle length">
-            One cycle is <B>7 completions</B> for every recurring task. A cycle close triggers the money raise and the XP mastery bonus, then the counter wraps to 0. One-off (specific-date) tasks have no cycle.
+            One cycle is <B>7 completions</B> for every recurring task. A cycle close triggers the money raise and the XP mastery bonus, then the counter wraps to 0. One-time dated tasks have no cycle.
           </Block>
-          <Block title="Fixed schedules (weekly / monthly / specific-day)">
+          <Block title="Fixed schedules (weekly / every N weeks / monthly)">
             The streak counts consecutive due occurrences. Missing a due day resets it to 0.
           </Block>
           <Block title="Flexible (at-least N / week or month)">
             The streak is period-based: a period counts if you hit its quota. Completing on non-consecutive days is fine — only missing the quota for a whole elapsed period breaks it.
           </Block>
           <Block title="Skip / day-off">
-            Marks a day streak-neutral: no penalty, no streak impact. Only for flexible tasks that can still hit quota on remaining days.
+            Marks a day streak-neutral: no penalty, no streak impact, and it is removed from
+            the day's due count — so skipping cannot block a raise. See Vacation &amp; pauses above
+            for how it differs from failing.
           </Block>
         </div>
       </section>
@@ -304,7 +399,39 @@ export function CodexView() {
 
       {/* Traits legend */}
       <section>
-        <SectionTitle>Traits</SectionTitle>
+        <SectionTitle icon={<Wallet className="h-3.5 w-3.5" />}>Wallet</SectionTitle>
+        <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Block title="What the balance is">
+            Every completion adds its amount; every failure subtracts it. The balance{' '}
+            <span className="text-primary font-semibold">can go negative</span> — nothing floors
+            it at zero.
+          </Block>
+          <Block title="Withdrawing">
+            Withdrawing reduces the balance and is recorded in your withdraw history. It does not
+            touch XP, streaks or Legacy — Legacy counts what you earned, not what you kept.
+          </Block>
+        </div>
+      </section>
+
+      {/* Reminders & sync */}
+      <section>
+        <SectionTitle icon={<Bell className="h-3.5 w-3.5" />}>Reminders &amp; sync</SectionTitle>
+        <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Block title="Reminders">
+            A task with a scheduled time can push a notification when it falls due. Subtasks carry
+            their own times and are reminded separately.
+          </Block>
+          <Block title="Same data everywhere">
+            Tasks, completions, skips, missed subtasks, pauses, wallet, XP and the Stack all live
+            on the server, so one login shows the same state on phone and laptop. Only your login
+            session and whether the sidebar is collapsed stay on the device.
+          </Block>
+        </div>
+      </section>
+
+      {/* Traits */}
+      <section>
+        <SectionTitle icon={<ListChecks className="h-3.5 w-3.5" />}>Traits</SectionTitle>
         <div className="grid gap-2 sm:grid-cols-2">
           {TRAITS.map((t) => (
             <div key={t.id} className="flex items-center gap-3 rounded-xl border border-border/50 bg-card/50 p-3">
