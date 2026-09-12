@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Task } from '@/types/task';
+import { TRAITS } from '@/lib/xpUtils';
 import { useTasks } from '@/contexts/TaskContext';
 import { Button } from '@/components/ui/button';
 import { Check, Flame, Clock, Undo2, X, SkipForward } from 'lucide-react';
@@ -75,7 +76,19 @@ export function TaskCard({ task, date, onComplete }: TaskCardProps) {
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
           {/* Name + chips */}
-          <div className="flex min-w-0 flex-[1_1_58%] items-center gap-1.5">
+          <div className="flex min-w-0 flex-[1_1_58%] items-center gap-2">
+            {(() => {
+              const trait = TRAITS.find((t) => t.id === task.traits[0]) ?? TRAITS[0];
+              return (
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px]"
+                  style={{ backgroundColor: `${trait.hex}26` }}
+                  aria-hidden
+                >
+                  {trait.emoji}
+                </span>
+              );
+            })()}
             <span
               className={cn(
                 'truncate text-[13px] font-semibold lg:text-sm',

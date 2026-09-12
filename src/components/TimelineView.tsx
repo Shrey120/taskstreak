@@ -165,7 +165,7 @@ export function TimelineView({ selectedDate, onTaskComplete }: TimelineViewProps
 
   if (tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-card/60 px-6 py-16">
+      <div id="timeline-tasks" className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-card/60 px-6 py-16">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
           <ClipboardList className="h-7 w-7 text-muted-foreground" />
         </div>
@@ -178,7 +178,7 @@ export function TimelineView({ selectedDate, onTaskComplete }: TimelineViewProps
   }
 
   return (
-    <div>
+    <div id="timeline-tasks">
       {/* Day header */}
       <div className="mb-6">
         <div className="flex items-baseline justify-between gap-3">

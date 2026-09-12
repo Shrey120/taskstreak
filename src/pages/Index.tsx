@@ -3,6 +3,7 @@ import { TaskProvider } from '@/contexts/TaskContext';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { PauseManager } from '@/components/PauseManager';
 import { ReportView } from '@/components/ReportView';
+import { WelcomeHero } from '@/components/WelcomeHero';
 
 import { AllTasksView } from '@/components/AllTasksView';
 import { HabitMetricView, HabitMetric } from '@/components/HabitMetricView';
@@ -101,6 +102,8 @@ function Dashboard() {
               <PauseManager />
             </div>
           )}
+
+          {view === 'timeline' && <WelcomeHero onNavigate={setView} />}
 
           <div className="animate-fade-in">
             {view === 'timeline' && (
