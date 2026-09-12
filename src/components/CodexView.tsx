@@ -76,8 +76,9 @@ export function CodexView() {
             Tasks already done for money drop off; failed ones stay so you can undo them.
           </Row>
           <Row label="Stack">
-            A capture list for anything not yet a habit. One card at a time — finish it, or send
-            it to the back. No money, no XP, no streaks.
+            A capture list for anything not yet a habit. One card at a time — finish it, send it
+            to the back, or drag the queue into the order you want. The order is saved, so it
+            survives a reload and matches on every device. No money, no XP, no streaks.
           </Row>
           <Row label="All tasks">
             Every task with its schedule, streak and stats. Edit or delete from here, and open

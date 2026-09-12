@@ -159,9 +159,9 @@ export type Database = {
         Relationships: []
       }
       stack_items: {
-        Row: { created_at: string; device_id: string; id: string; note: string | null; title: string }
-        Insert: { created_at?: string; device_id: string; id?: string; note?: string | null; title: string }
-        Update: { created_at?: string; device_id?: string; id?: string; note?: string | null; title?: string }
+        Row: { created_at: string; device_id: string; id: string; note: string | null; sort_order: number | null; title: string }
+        Insert: { created_at?: string; device_id: string; id?: string; note?: string | null; sort_order?: number | null; title: string }
+        Update: { created_at?: string; device_id?: string; id?: string; note?: string | null; sort_order?: number | null; title?: string }
         Relationships: []
       }
       subtasks: {

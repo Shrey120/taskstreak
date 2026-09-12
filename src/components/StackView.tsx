@@ -4,33 +4,56 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Check, X, Plus, Layers, ArrowDown, Trash2 } from 'lucide-react';
+import { Check, X, Plus, Layers, ArrowDown, ArrowUp, Trash2, GripVertical } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface StackItem {
   id: string;
   title: string;
   note?: string;
   createdAt: number;
+  sortOrder: number;
 }
 
 /**
  * The stack lives server-side so the same login sees the same pile on every
- * device. Newest first, matching how items are pushed on.
+ * device, and the ORDER is part of the data -- "Later" moving a card to the
+ * back has to survive a reload, so rows carry an explicit sort_order rather
+ * than being re-sorted by creation time.
+ *
+ * Errors are returned rather than swallowed: a failed save used to look
+ * exactly like a successful one.
  */
-async function load(deviceId?: string): Promise<StackItem[]> {
-  if (!deviceId) return [];
+async function load(deviceId?: string): Promise<{ items: StackItem[]; error?: string }> {
+  if (!deviceId) return { items: [] };
   const { data, error } = await supabase
     .from('stack_items')
-    .select('id, title, note, created_at')
+    .select('id, title, note, created_at, sort_order')
     .eq('device_id', deviceId)
+    .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false });
-  if (error || !data) return [];
-  return data.map((r) => ({
-    id: r.id,
-    title: r.title,
-    note: r.note ?? undefined,
-    createdAt: new Date(r.created_at).getTime(),
-  }));
+  if (error) return { items: [], error: error.message };
+  return {
+    items: (data ?? []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      note: r.note ?? undefined,
+      createdAt: new Date(r.created_at).getTime(),
+      sortOrder: r.sort_order ?? 0,
+    })),
+  };
+}
+
+/** Renumber the pile with a wide gap so single moves rarely need a rewrite. */
+const STEP = 1000;
+
+async function persistOrder(rows: StackItem[]): Promise<string | undefined> {
+  const updates = rows.map((r, i) =>
+    supabase.from('stack_items').update({ sort_order: (i + 1) * STEP }).eq('id', r.id),
+  );
+  const results = await Promise.all(updates);
+  const failed = results.find((r) => r.error);
+  return failed?.error?.message;
 }
 
 export function StackView() {
@@ -45,38 +68,104 @@ export function StackView() {
 
   useEffect(() => {
     let cancelled = false;
-    load(deviceId).then((rows) => { if (!cancelled) setItems(rows); });
+    load(deviceId).then(({ items: rows, error }) => {
+      if (cancelled) return;
+      setItems(rows);
+      if (error) toast.error(`Could not load your stack: ${error}`);
+    });
     return () => { cancelled = true; };
   }, [deviceId]);
 
   /**
-   * Removals are driven by which items disappeared, so a completed or
-   * discarded card is deleted on the server too rather than only locally.
+   * Applies a new pile: deletes anything that disappeared and writes the new
+   * order. Both halves are reported if they fail -- a save that silently did
+   * nothing was the original bug here.
    */
-  const persist = (next: StackItem[]) => {
-    const goneIds = items.filter((i) => !next.some((n) => n.id === i.id)).map((i) => i.id);
+  const persist = async (next: StackItem[]) => {
+    const previous = items;
+    const goneIds = previous.filter((i) => !next.some((n) => n.id === i.id)).map((i) => i.id);
     setItems(next);
+
     if (goneIds.length > 0) {
-      supabase.from('stack_items').delete().in('id', goneIds)
-        .then(({ error }) => { if (error) console.error('stack delete:', error); });
+      const { error } = await supabase.from('stack_items').delete().in('id', goneIds);
+      if (error) {
+        setItems(previous);
+        toast.error(`Could not remove that: ${error.message}`);
+        return;
+      }
     }
+    const orderErr = await persistOrder(next);
+    if (orderErr) toast.error(`Order not saved: ${orderErr}`);
   };
 
   const add = async () => {
     const t = title.trim();
-    if (!t || !deviceId) return;
-    setTitle('');
-    setNote('');
+    if (!t) return;
+    if (!deviceId) {
+      toast.error('Not signed in on this device yet.');
+      return;
+    }
+    const nextOrder = items.length ? Math.min(...items.map((i) => i.sortOrder)) - STEP : STEP;
     const { data, error } = await supabase
       .from('stack_items')
-      .insert({ device_id: deviceId, title: t, note: note.trim() || null })
-      .select('id, title, note, created_at')
+      .insert({ device_id: deviceId, title: t, note: note.trim() || null, sort_order: nextOrder })
+      .select('id, title, note, created_at, sort_order')
       .single();
-    if (error || !data) return;
+    if (error || !data) {
+      toast.error(`Could not save: ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+    setTitle('');
+    setNote('');
     setItems((prev) => [
-      { id: data.id, title: data.title, note: data.note ?? undefined, createdAt: new Date(data.created_at).getTime() },
+      {
+        id: data.id,
+        title: data.title,
+        note: data.note ?? undefined,
+        createdAt: new Date(data.created_at).getTime(),
+        sortOrder: data.sort_order ?? nextOrder,
+      },
       ...prev,
     ]);
+  };
+
+  // Pointer events rather than HTML5 drag-and-drop: the latter does not fire
+  // on touch at all, and this list is used mostly on a phone.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  const startDrag = (e: React.PointerEvent, index: number) => {
+    e.preventDefault();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    setDragIndex(index);
+    setOverIndex(index);
+  };
+
+  const onRowPointerMove = (e: React.PointerEvent) => {
+    if (dragIndex === null) return;
+    // Pointer capture keeps events on the handle, so find the row underneath.
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const row = el?.closest('[data-stack-index]');
+    if (!row) return;
+    const idx = Number(row.getAttribute('data-stack-index'));
+    if (!Number.isNaN(idx)) setOverIndex(idx);
+  };
+
+  const endDrag = () => {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      moveItem(dragIndex, overIndex);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  /** Move an item from one index to another and persist the new order. */
+  const moveItem = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return;
+    const next = [...items];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    persist(next);
   };
 
   const top = items[0];
@@ -262,25 +351,57 @@ export function StackView() {
               Nothing queued.
             </p>
           ) : (
-            <ul className="space-y-1 max-h-[280px] overflow-y-auto">
-              {items.slice(1).map((it, i) => (
-                <li
-                  key={it.id}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-secondary/60 group"
-                >
-                  <span className="text-[10px] font-bold tabular-nums text-muted-foreground w-5 text-right">
-                    {i + 2}
-                  </span>
-                  <span className="text-sm truncate flex-1">{it.title}</span>
-                  <button
-                    onClick={() => remove(it.id)}
-                    className="p-1 text-destructive/70 transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
-                    aria-label={`Remove ${it.title}`}
+            <ul
+              className="space-y-1 max-h-[280px] overflow-y-auto"
+              onPointerMove={onRowPointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+            >
+              {items.slice(1).map((it, i) => {
+                const index = i + 1; // position in the full pile
+                return (
+                  <li
+                    key={it.id}
+                    data-stack-index={index}
+                    className={cn(
+                      'flex items-center gap-2 p-2 rounded-lg group touch-pan-y',
+                      dragIndex === index
+                        ? 'bg-primary/15 ring-1 ring-primary/40'
+                        : 'hover:bg-secondary/60',
+                      overIndex === index && dragIndex !== null && dragIndex !== index &&
+                        'ring-1 ring-primary/30',
+                    )}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      onPointerDown={(e) => startDrag(e, index)}
+                      className="p-0.5 -ml-1 text-muted-foreground/60 hover:text-foreground cursor-grab active:cursor-grabbing touch-none"
+                      aria-label={`Reorder ${it.title}`}
+                    >
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[10px] font-bold tabular-nums text-muted-foreground w-5 text-right">
+                      {index + 1}
+                    </span>
+                    <span className="text-sm truncate flex-1">{it.title}</span>
+                    <button
+                      onClick={() => moveItem(index, 1)}
+                      disabled={index === 1}
+                      className="p-1 text-muted-foreground/70 hover:text-foreground disabled:opacity-0"
+                      aria-label={`Move ${it.title} to front of queue`}
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => remove(it.id)}
+                      className="p-1 text-destructive/70 transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
+                      aria-label={`Remove ${it.title}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
