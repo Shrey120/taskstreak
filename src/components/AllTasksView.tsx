@@ -8,8 +8,7 @@ import { EditTaskDialog } from './EditTaskDialog';
 import { ConfirmDeleteTask } from './ConfirmDeleteTask';
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual } from 'date-fns';
 import { getStreakCycleLength } from '@/lib/streakUtils';
-import { isMonthDayDue } from '@/lib/periodUtils';
-import { isEveryNWeeksValue } from '@/lib/schedule';
+import { isEveryNWeeksValue, isTaskDueOn, isPausedOn } from '@/lib/schedule';
 import {
   Dialog,
   DialogContent,
@@ -26,7 +25,7 @@ import {
 type SortOption = 'none' | 'money-asc' | 'money-desc';
 
 export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) => void } = {}) {
-  const { tasks, deleteTask } = useTasks();
+  const { tasks, deleteTask, pauseRanges, dayOffSet } = useTasks();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [analyticsTask, setAnalyticsTask] = useState<Task | null>(null);
@@ -81,49 +80,33 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
       const startDate = parseISO(task.startDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
-      if (isAfter(startDate, today)) return;
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
-      const daysToCheck = eachDayOfInterval({ 
-        start: startDate, 
-        end: new Date(today.getTime() - 24 * 60 * 60 * 1000) // Exclude today
-      });
+      // A task created today (or later) has no elapsed days to have missed yet.
+      // eachDayOfInterval does not validate start <= end -- given a startDate of
+      // today and an end of yesterday, it silently walks BACKWARD and returns
+      // dates from before the task existed, which then got counted as missed.
+      // That is exactly what inflated Total Lost for a brand-new task.
+      if (isAfter(startDate, yesterday)) return;
+
+      const daysToCheck = eachDayOfInterval({ start: startDate, end: yesterday });
 
       const completedDates = new Set(task.completions.map(c => c.date));
 
       daysToCheck.forEach(date => {
-        const dayOfWeek = date.getDay();
-        const dayName = format(date, 'EEEE').toLowerCase();
         const dateStr = format(date, 'yyyy-MM-dd');
-        
-        let wasScheduled = false;
-        
-        switch (task.frequencyType) {
-          case 'weekly':
-            wasScheduled = (task.frequencyValue as number[]).includes(dayOfWeek);
-            break;
-          case 'monthly':
-            wasScheduled = isMonthDayDue(task.frequencyValue as number[], date);
-            break;
-          case 'specific-date':
-            wasScheduled = task.frequencyValue === dateStr;
-            break;
-          case 'specific-day':
-            wasScheduled = task.frequencyValue === dayName;
-            break;
-          case 'at-least-weekly':
-          case 'at-least-monthly':
-            wasScheduled = true;
-            break;
-        }
+        if (completedDates.has(dateStr)) return;
+        // A skipped or paused day was never a real obligation -- it cost
+        // nothing when it happened, so it should not read as a loss here.
+        if (dayOffSet.has(`${task.id}|${dateStr}`)) return;
+        if (isPausedOn(pauseRanges, dateStr)) return;
+        if (!isTaskDueOn(task, date)) return;
 
-        if (wasScheduled && !completedDates.has(dateStr)) {
-          // Missed this day - add potential earnings to lost
-          if (task.isHourly) {
-            totalLost += task.perMinuteRate * 30; // Assume 30 min session
-          } else {
-            totalLost += task.amount;
-          }
+        // Missed this day - add potential earnings to lost
+        if (task.isHourly) {
+          totalLost += task.perMinuteRate * 30; // Assume 30 min session
+        } else {
+          totalLost += task.amount;
         }
       });
 
@@ -463,33 +446,12 @@ function TaskAnalyticsDialog({ task, open, onOpenChange }: TaskAnalyticsDialogPr
     if (daysSinceStart < 0) return 0;
     
     const daysToCheck = eachDayOfInterval({ start: startDate, end: today });
-    
+
     let scheduledDays = 0;
     daysToCheck.forEach(date => {
-      const dayOfWeek = date.getDay();
-      const dayName = format(date, 'EEEE').toLowerCase();
-      const dateStr = format(date, 'yyyy-MM-dd');
-      
-      switch (task.frequencyType) {
-        case 'weekly':
-          if ((task.frequencyValue as number[]).includes(dayOfWeek)) scheduledDays++;
-          break;
-        case 'monthly':
-          if (isMonthDayDue(task.frequencyValue as number[], date)) scheduledDays++;
-          break;
-        case 'specific-date':
-          if (task.frequencyValue === dateStr) scheduledDays++;
-          break;
-        case 'specific-day':
-          if (task.frequencyValue === dayName) scheduledDays++;
-          break;
-        case 'at-least-weekly':
-        case 'at-least-monthly':
-          scheduledDays++;
-          break;
-      }
+      if (isTaskDueOn(task, date)) scheduledDays++;
     });
-    
+
     return scheduledDays;
   };
   
