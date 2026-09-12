@@ -454,7 +454,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                     <TooltipTrigger asChild>
                       <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-xs p-3">
+                    <TooltipContent className="p-3">
                       <p className="font-semibold mb-2">Weekly Streak Multipliers:</p>
                       <div className="space-y-1 text-sm">
                         <p>Difficulty 1 → 1.5x</p>
@@ -501,7 +501,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                     <TooltipTrigger asChild>
                       <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-xs p-3">
+                    <TooltipContent className="p-3">
                       <p className="font-semibold mb-2">XP per completion:</p>
                       <div className="space-y-1 text-sm">
                         <p>Effort 1–2 → {baseXpForEffort(1)} XP</p>
