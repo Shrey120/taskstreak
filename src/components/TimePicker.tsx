@@ -125,13 +125,6 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
   const [period, setPeriod] = useState<'AM' | 'PM'>(initial.period);
   const [hText, setHText] = useState(String(initial.h12));
   const [mText, setMText] = useState(initial.m.toString().padStart(2, '0'));
-  // An empty/invalid value has no real time to show, so the wheels have to
-  // rest SOMEWHERE -- parseValue picks 7:00 AM. Without this flag, opening
-  // the picker just to look and tapping Done to close it would silently
-  // write that resting position as a real, chosen time. Done only commits
-  // once the user has actually moved something.
-  const [touched, setTouched] = useState(false);
-  const markTouched = () => setTouched(true);
 
   useEffect(() => { setHText(String(h12)); }, [h12]);
   useEffect(() => { setMText(m.toString().padStart(2, '0')); }, [m]);
@@ -141,12 +134,12 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
 
   const commitTypedHour = () => {
     const n = parseInt(hText, 10);
-    if (!isNaN(n)) { setH12(Math.max(1, Math.min(12, n))); markTouched(); }
+    if (!isNaN(n)) setH12(Math.max(1, Math.min(12, n)));
     else setHText(String(h12));
   };
   const commitTypedMinute = () => {
     const n = parseInt(mText, 10);
-    if (!isNaN(n)) { setM(Math.max(0, Math.min(59, n))); markTouched(); }
+    if (!isNaN(n)) setM(Math.max(0, Math.min(59, n)));
     else setMText(m.toString().padStart(2, '0'));
   };
 
@@ -154,20 +147,20 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
     <div className="p-4 space-y-4">
       {/* Wheels */}
       <div className="relative flex items-stretch gap-2 rounded-xl bg-secondary/40 border border-border/50 p-2">
-        <Wheel<number> ariaLabel="Hour" items={hours} value={h12} onChange={(v) => { setH12(v); markTouched(); }} />
+        <Wheel<number> ariaLabel="Hour" items={hours} value={h12} onChange={setH12} />
         <div className="self-center text-2xl font-bold text-muted-foreground select-none">:</div>
         <Wheel<number>
           ariaLabel="Minute"
           items={minutes}
           value={m}
-          onChange={(v) => { setM(v); markTouched(); }}
+          onChange={setM}
           render={(x) => x.toString().padStart(2, '0')}
         />
         <Wheel<'AM' | 'PM'>
           ariaLabel="AM or PM"
           items={['AM', 'PM']}
           value={period}
-          onChange={(v) => { setPeriod(v); markTouched(); }}
+          onChange={setPeriod}
         />
       </div>
 
@@ -207,7 +200,7 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
               <button
                 key={p}
                 type="button"
-                onClick={() => { setPeriod(p); markTouched(); }}
+                onClick={() => setPeriod(p)}
                 className={cn(
                   'flex-1 text-sm font-semibold transition-colors touch-manipulation',
                   period === p
@@ -224,20 +217,21 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
 
       <Button
         onClick={() => {
-          // ensure any un-blurred typed values are applied
+          // Done always commits the current wheel/typed state -- like any
+          // ordinary time picker. An earlier version tried to detect whether
+          // the user had "really" interacted before committing, to avoid
+          // writing the wheels' resting position (7:00 AM, picked by
+          // parseValue for an empty value) as a real choice on a field that
+          // was never touched. That detection was fragile -- a scroll-driven
+          // change is debounced (see handleScroll), so it raced against
+          // quick taps -- and it was hiding genuine selections, which is a
+          // worse failure than the one it was guarding against. If you don't
+          // want a time, use Clear next to the field instead of opening this
+          // and tapping Done unchanged.
           const hn = parseInt(hText, 10);
           const mn = parseInt(mText, 10);
           const finalH = !isNaN(hn) ? Math.max(1, Math.min(12, hn)) : h12;
           const finalM = !isNaN(mn) ? Math.max(0, Math.min(59, mn)) : m;
-          // `touched` catches an interaction as it happens; comparing the
-          // final numbers against what the picker opened with catches it
-          // even if `touched` lost a race -- a scroll-driven wheel change is
-          // debounced (see handleScroll), so a Done tap landing inside that
-          // debounce window could otherwise fire before the flag was set.
-          // Only truly nothing-happened (still resting on the opening
-          // position, flag never fired either) still closes without saving.
-          const changed = finalH !== initial.h12 || finalM !== initial.m || period !== initial.period;
-          if (!touched && !changed) { onDone(undefined); return; }
           onDone(toHHMM(finalH, finalM, period));
         }}
         className="w-full h-12 text-base font-semibold"
