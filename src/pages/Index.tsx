@@ -23,13 +23,6 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
-/**
- * Views that lay out as a wide grid on desktop (cards, stat tiles) get the full
- * content width. The timeline is a single vertical list, so it keeps a reading
- * column instead of stretching a phone layout across a 27" display.
- */
-const WIDE_VIEWS = new Set<string>(['all', 'growth', 'stack']);
-
 function Dashboard() {
   const [view, setView] = useState<ViewType>('timeline');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -38,7 +31,6 @@ function Dashboard() {
 
   const isMetric = view.startsWith('metric:');
   const metric = isMetric ? (view.split(':')[1] as HabitMetric) : null;
-  const wide = WIDE_VIEWS.has(view) || isMetric;
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-background">
@@ -58,7 +50,7 @@ function Dashboard() {
           <div
             className={cn(
               'px-gutter mx-auto flex h-14 items-center gap-1 lg:h-16 lg:gap-4',
-              wide ? 'max-w-[1440px]' : 'max-w-4xl',
+              'max-w-[1440px]',
             )}
           >
             <Button
@@ -88,14 +80,14 @@ function Dashboard() {
           </div>
         </header>
 
-        <AppTopNav view={view} onSelect={setView} wide={wide} />
+        <AppTopNav view={view} onSelect={setView} />
 
         <main
           className={cn(
             'px-gutter relative z-10 mx-auto pt-4 lg:pt-7',
             // Room for the bottom bar + FAB on phones; neither exists on desktop.
             'pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-16',
-            wide ? 'max-w-[1440px]' : 'max-w-4xl',
+            'max-w-[1440px]',
           )}
         >
           {view === 'timeline' && (
