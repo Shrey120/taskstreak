@@ -22,16 +22,17 @@ export function WeeklyLoadPreview({ selectedDays, excludeTaskId }: WeeklyLoadPre
 
   const existing = useMemo(() => {
     const counts = [0, 0, 0, 0, 0, 0, 0];
-    // Probe one real week so every frequency type is counted by the same rule
-    // the scheduler uses, rather than by re-reading frequencyValue here.
-    const monday = new Date();
-    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    // Probe one real week (Sunday -> Saturday, matching periodUtils.ts) so
+    // every frequency type is counted by the same rule the scheduler uses,
+    // rather than by re-reading frequencyValue here.
+    const sunday = new Date();
+    sunday.setDate(sunday.getDate() - sunday.getDay());
     for (const task of tasks) {
       if (task.id === excludeTaskId) continue;
       if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') continue;
       for (let i = 0; i < 7; i++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
+        const d = new Date(sunday);
+        d.setDate(sunday.getDate() + i);
         if (isTaskDueOn(task, d)) counts[d.getDay()]++;
       }
     }

@@ -44,15 +44,14 @@ export function isTaskDueOnDateGeneric(task: Task, date: Date): boolean {
 
 // ---------------------------------------------------------------------------
 // Period helpers for at-least-weekly / at-least-monthly streaks.
-// Weeks run Monday -> Sunday.
+// Weeks run Sunday -> Saturday, matching weekStartKey in periodUtils.ts.
 // ---------------------------------------------------------------------------
 
 function getWeekKey(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
-  const day = d.getDay(); // 0=Sun..6=Sat
-  const diffToMon = (day + 6) % 7; // Sun -> 6, Mon -> 0, ...
-  d.setDate(d.getDate() - diffToMon);
-  return format(d, 'yyyy-MM-dd'); // Monday-of-week key
+  const day = d.getDay(); // 0=Sun..6=Sat, already the offset back to Sunday
+  d.setDate(d.getDate() - day);
+  return format(d, 'yyyy-MM-dd'); // Sunday-of-week key
 }
 
 function prevWeekKey(mondayKey: string): string {

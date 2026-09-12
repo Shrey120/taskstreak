@@ -39,7 +39,7 @@ export interface PeriodReport {
   prevDue: number;
 
   traits: TraitDelta[];
-  /** Mon..Sun completion counts, index 0 = Monday. */
+  /** Sun..Sat completion counts, index 0 = Sunday -- matches the week convention everywhere else in the app. */
   byWeekday: number[];
   bestWeekday: number | null;
   worstWeekday: number | null;
@@ -53,7 +53,7 @@ const DAY_MS = 86_400_000;
 export function periodBounds(ref: Date, unit: ReportUnit): { start: string; end: string } {
   if (unit === 'week') {
     const d = new Date(ref);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // back to Monday
+    d.setDate(d.getDate() - d.getDay()); // back to Sunday
     const end = new Date(d);
     end.setDate(d.getDate() + 6);
     return { start: toKey(d), end: toKey(end) };
@@ -108,7 +108,7 @@ function measure(
     const key = toKey(date);
     if (key > today) break; // don't count the future as missed
     if (isPausedOn(pauses, key)) { w.pausedDays++; continue; }
-    const mondayIndex = (date.getDay() + 6) % 7;
+    const sundayIndex = date.getDay(); // already 0 = Sunday .. 6 = Saturday
 
     for (const task of tasks) {
       const completion = task.completions.find((c) => c.date === key);
@@ -116,7 +116,7 @@ function measure(
         if (completion.earnedAmount > 0) {
           w.earned += completion.earnedAmount;
           w.completed++;
-          w.byWeekday[mondayIndex]++;
+          w.byWeekday[sundayIndex]++;
         } else {
           // A zero-earning completion is a recorded failure. Use the amount
           // actually charged: `task.amount` compounds on every streak cycle,

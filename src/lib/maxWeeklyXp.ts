@@ -7,7 +7,7 @@ import { getAtLeastConfig } from '@/lib/schedule';
 
 /**
  * Estimate the maximum ADDITIONAL XP each trait can still gain between `from`
- * (inclusive) and the Sunday that ends `from`'s week (inclusive), assuming the
+ * (inclusive) and the Saturday that ends `from`'s week (inclusive), assuming the
  * user completes every remaining due occurrence of every task perfectly.
  *
  * Mirrors TaskContext.completeTask:
@@ -20,8 +20,8 @@ import { getAtLeastConfig } from '@/lib/schedule';
  *     resets streak. Same difficulty multiplier for all task types.
  *
  * Assumptions (documented so the number is honest):
- *   - Starts from each task's CURRENT streak — "perfect from here to Sunday".
- *   - Fixed schedules: counts due days in [from..Sunday] not already done.
+ *   - Starts from each task's CURRENT streak — "perfect from here to Saturday".
+ *   - Fixed schedules: counts due days in [from..Saturday] not already done.
  *   - at-least-weekly: remaining weekly quota, one per remaining day.
  *   - Count tasks: 120 min per due day (the ceiling).
  *   - Ignores day-off / missed toggles.
@@ -51,12 +51,19 @@ function ymd(d: Date): string {
   return format(d, 'yyyy-MM-dd');
 }
 
-function weekEndSunday(d: Date): Date {
+/**
+ * Saturday that ends the week containing `d`, given weeks run Sunday ->
+ * Saturday (see periodUtils.ts). This used to walk forward to the NEXT
+ * Sunday instead -- one day past the actual end of the current week, and
+ * inconsistent with `weekStart` a few lines below, which already anchored
+ * correctly on Sunday via `d.getDate() - d.getDay()`.
+ */
+function weekEndSaturday(d: Date): Date {
   const r = new Date(d);
   r.setHours(0, 0, 0, 0);
   const dow = r.getDay();
-  const daysUntilSunday = dow === 0 ? 0 : 7 - dow;
-  r.setDate(r.getDate() + daysUntilSunday);
+  const daysUntilSaturday = 6 - dow;
+  r.setDate(r.getDate() + daysUntilSaturday);
   return r;
 }
 
@@ -116,7 +123,7 @@ function awardForCompletion(task: Task, streakBefore: number, cycleLength: numbe
 export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxWeeklyXpResult {
   const start = new Date(from);
   start.setHours(0, 0, 0, 0);
-  const sunday = weekEndSunday(start);
+  const saturday = weekEndSaturday(start);
 
   const weekStart = new Date(start);
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -125,7 +132,7 @@ export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxW
   const perTrait = EMPTY();
 
   const remainingDates: Date[] = [];
-  for (let d = new Date(start); d <= sunday; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(start); d <= saturday; d.setDate(d.getDate() + 1)) {
     remainingDates.push(new Date(d));
   }
 
@@ -136,7 +143,7 @@ export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxW
 
     if (task.frequencyType === 'at-least-weekly') {
       const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
-      const already = countSuccessesThisWeek(task, weekStart, sunday);
+      const already = countSuccessesThisWeek(task, weekStart, saturday);
       const remainingQuota = Math.max(0, quota - already);
       // An excluded day was never going to pay out, so it can't count toward
       // how many more times this task could realistically complete this week.
@@ -184,7 +191,7 @@ export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxW
   }
 
   return {
-    weekEnd: ymd(sunday),
+    weekEnd: ymd(saturday),
     perTrait,
     daysCounted: remainingDates.length,
   };

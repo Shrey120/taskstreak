@@ -11,7 +11,7 @@ import { getAtLeastConfig } from '@/lib/schedule';
  * comparison by the UTC offset and silently drops the last day of a period for
  * anyone east of Greenwich. Lexicographic comparison of `yyyy-MM-dd` is exact.
  *
- * Weeks run Monday -> Sunday, matching the streak logic in streakUtils.
+ * Weeks run Sunday -> Saturday, matching the streak logic in streakUtils.
  */
 
 export const toKey = (d: Date): string => format(d, 'yyyy-MM-dd');
@@ -19,14 +19,14 @@ export const toKey = (d: Date): string => format(d, 'yyyy-MM-dd');
 /** Parse a `yyyy-MM-dd` key at local noon, which is DST-safe for day math. */
 export const fromKey = (key: string): Date => new Date(`${key}T12:00:00`);
 
-/** Monday of the week containing `key`. */
+/** Sunday of the week containing `key`. */
 export function weekStartKey(key: string): string {
   const d = fromKey(key);
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Sun -> 6, Mon -> 0
+  d.setDate(d.getDate() - d.getDay()); // getDay() is already the offset back to Sunday
   return toKey(d);
 }
 
-/** Sunday of the week containing `key`. */
+/** Saturday of the week containing `key`. */
 export function weekEndKey(key: string): string {
   const d = fromKey(weekStartKey(key));
   d.setDate(d.getDate() + 6);
