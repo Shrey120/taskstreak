@@ -49,7 +49,13 @@ interface TaskContextType {
   traitXp: Record<TraitId, number>;
   xpEvents: XpEvent[];
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'completions' | 'currentStreak' | 'streaksCompleted' | 'streakBrokenThisWeek'>) => Promise<void>;
-  updateTask: (taskId: string, updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' | 'scheduledTime' | 'traits'>>) => Promise<void>;
+  updateTask: (
+    taskId: string,
+    updates: Partial<Pick<Task,
+      'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' |
+      'scheduledTime' | 'traits' | 'isHourly' | 'perMinuteRate'
+    >> & { subtasks?: { id?: string; name: string; scheduledTime: string }[] }
+  ) => Promise<void>;
   completeTask: (taskId: string, date: Date, minutesWorked?: number) => Promise<void>;
   cancelTask: (taskId: string, date: Date) => Promise<void>;
   undoComplete: (taskId: string, date: Date) => Promise<void>;
@@ -1056,18 +1062,44 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const updateTask = async (
     taskId: string,
-    updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' | 'scheduledTime' | 'traits'>>
+    updates: Partial<Pick<Task,
+      'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' |
+      'scheduledTime' | 'traits' | 'isHourly' | 'perMinuteRate'
+    >> & {
+      /** `id` present = an existing subtask to keep (and rename/retime if
+       *  changed); absent = a new one to insert. Any existing subtask whose id
+       *  is not present here is deleted. Omit the field entirely to leave
+       *  subtasks untouched -- only an explicit array (including []) syncs them. */
+      subtasks?: { id?: string; name: string; scheduledTime: string }[];
+    }
   ) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
-    // Calculate new amount based on new baseAmount and streaksCompleted
-    const newBaseAmount = updates.baseAmount ?? task.baseAmount;
-    const newDifficulty = updates.difficulty ?? task.difficulty;
-    const multiplier = DIFFICULTY_MULTIPLIERS[newDifficulty];
-    const newAmount = task.streaksCompleted > 0
-      ? newBaseAmount * Math.pow(multiplier, task.streaksCompleted)
-      : newBaseAmount;
+    // An hourly task carries no fixed amount and its difficulty/effort are
+    // fixed rather than user-set -- its raise is a flat +₹0.50/min, not a
+    // difficulty-scaled multiplier -- so none of the fixed-task compounding
+    // below applies to it. This mirrors the rules CreateTaskDialog already
+    // enforces at creation time.
+    const newIsHourly = updates.isHourly ?? task.isHourly;
+    const newDifficulty = newIsHourly ? 1 : (updates.difficulty ?? task.difficulty);
+    const newEffortWeight = newIsHourly ? 3 : (updates.effortWeight ?? task.effortWeight);
+
+    let newBaseAmount = task.baseAmount;
+    let newAmount = task.amount;
+    let newPerMinuteRate = task.perMinuteRate;
+    if (newIsHourly) {
+      newBaseAmount = 0;
+      newAmount = 0;
+      newPerMinuteRate = updates.perMinuteRate ?? task.perMinuteRate;
+    } else {
+      newBaseAmount = updates.baseAmount ?? task.baseAmount;
+      const multiplier = DIFFICULTY_MULTIPLIERS[newDifficulty];
+      newAmount = task.streaksCompleted > 0
+        ? newBaseAmount * Math.pow(multiplier, task.streaksCompleted)
+        : newBaseAmount;
+      newPerMinuteRate = 0;
+    }
 
     const newTraits = (updates.traits && updates.traits.length > 0 ? updates.traits : task.traits) as TraitId[];
     const { error } = await supabase
@@ -1079,16 +1111,79 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         base_amount: newBaseAmount,
         amount: newAmount,
         difficulty: newDifficulty,
-        effort_weight: updates.effortWeight ?? task.effortWeight,
+        effort_weight: newEffortWeight,
+        is_hourly: newIsHourly,
+        per_minute_rate: newPerMinuteRate,
         scheduled_time: updates.scheduledTime !== undefined ? updates.scheduledTime : (task.scheduledTime || null),
         traits: newTraits as any,
         trait: newTraits[0] || 'discipline',
-      })
+      } as any)
       .eq('id', taskId);
 
     if (error) {
       console.error('Error updating task:', error);
       return;
+    }
+
+    // Sync subtasks against the desired list: delete anything dropped,
+    // rename/retime anything kept, insert anything new. Only runs when the
+    // caller actually passed a list -- an omitted field leaves subtasks alone
+    // entirely, so nothing else that calls updateTask can accidentally wipe
+    // them.
+    let newSubtasks = task.subtasks;
+    if (updates.subtasks) {
+      const desired = updates.subtasks;
+      const existingById = new Map(task.subtasks.map((s) => [s.id, s] as const));
+      const keptIds = new Set(desired.filter((d) => d.id).map((d) => d.id!));
+      const toDelete = task.subtasks.filter((s) => !keptIds.has(s.id));
+      const toUpdate = desired.filter((d) => d.id && existingById.has(d.id));
+      const toInsert = desired.filter((d) => !d.id);
+
+      const jobs: PromiseLike<unknown>[] = [];
+      if (toDelete.length > 0) {
+        jobs.push(supabase.from('subtasks').delete().in('id', toDelete.map((s) => s.id)));
+      }
+      for (const d of toUpdate) {
+        jobs.push(
+          supabase.from('subtasks')
+            .update({ name: d.name, scheduled_time: d.scheduledTime || null })
+            .eq('id', d.id!),
+        );
+      }
+
+      let insertedRows: { id: string }[] = [];
+      if (toInsert.length > 0 && deviceId) {
+        const { data } = await supabase
+          .from('subtasks')
+          .insert(
+            toInsert.map((d) => ({
+              task_id: taskId,
+              device_id: deviceId,
+              name: d.name,
+              is_completed: false,
+              scheduled_time: d.scheduledTime || null,
+            })) as any,
+          )
+          .select();
+        insertedRows = (data ?? []) as { id: string }[];
+      }
+      await Promise.all(jobs).catch((e) => console.error('Error syncing subtasks:', e));
+
+      let insertCursor = 0;
+      newSubtasks = desired.map((d) => {
+        if (d.id) {
+          const existing = existingById.get(d.id)!;
+          return { ...existing, name: d.name, scheduledTime: d.scheduledTime };
+        }
+        const row = insertedRows[insertCursor++];
+        return {
+          id: row?.id ?? `local-${Date.now()}-${insertCursor}`,
+          taskId,
+          name: d.name,
+          isCompleted: false,
+          scheduledTime: d.scheduledTime,
+        };
+      });
     }
 
     setTasks((prev) =>
@@ -1102,9 +1197,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               baseAmount: newBaseAmount,
               amount: newAmount,
               difficulty: newDifficulty,
-              effortWeight: updates.effortWeight ?? t.effortWeight,
+              effortWeight: newEffortWeight,
+              isHourly: newIsHourly,
+              perMinuteRate: newPerMinuteRate,
               scheduledTime: updates.scheduledTime !== undefined ? updates.scheduledTime : t.scheduledTime,
               traits: newTraits,
+              subtasks: newSubtasks,
             }
           : t
       )

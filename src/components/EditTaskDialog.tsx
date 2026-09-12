@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useTasks } from '@/contexts/TaskContext';
-import { Task, FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS } from '@/types/task';
+import { Task, FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS, Subtask } from '@/types/task';
 import { TRAITS, TraitId, isTraitId, baseXpForEffort } from '@/lib/xpUtils';
-import { HelpCircle, Clock } from 'lucide-react';
+import { HelpCircle, Clock, Plus, X, ListChecks } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 import { cn } from '@/lib/utils';
 import { DayPresetChips } from './DayPresetChips';
@@ -38,6 +39,13 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
   const [weekInterval, setWeekInterval] = useState('2');
   const [weekAnchor, setWeekAnchor] = useState<string | null>(null);
   const [traits, setTraits] = useState<TraitId[]>(['discipline']);
+  const [isHourly, setIsHourly] = useState(false);
+  const [perMinuteRate, setPerMinuteRate] = useState('');
+  const [hasSubtasks, setHasSubtasks] = useState(false);
+  // `id` present = an existing row to keep/update; absent = a new one to insert.
+  const [subtaskItems, setSubtaskItems] = useState<{ id?: string; name: string; scheduledTime: string }[]>([]);
+  const [newSubtaskName, setNewSubtaskName] = useState('');
+  const [newSubtaskTime, setNewSubtaskTime] = useState('');
 
   useEffect(() => {
     if (task) {
@@ -48,6 +56,12 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       setEffortWeight(task.effortWeight ?? task.difficulty);
       setScheduledTime(task.scheduledTime || '');
       setTraits(task.traits && task.traits.length > 0 ? task.traits : ['discipline']);
+      setIsHourly(task.isHourly);
+      setPerMinuteRate(task.isHourly ? task.perMinuteRate.toString() : '');
+      setHasSubtasks(task.subtasks.length > 0);
+      setSubtaskItems(task.subtasks.map((s) => ({ id: s.id, name: s.name, scheduledTime: s.scheduledTime })));
+      setNewSubtaskName('');
+      setNewSubtaskTime('');
 
       if (task.frequencyType === 'weekly') {
         setSelectedDays(task.frequencyValue as number[]);
@@ -71,8 +85,21 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
     }
   }, [task]);
 
+  const addSubtask = () => {
+    if (newSubtaskName.trim() && newSubtaskTime) {
+      setSubtaskItems((prev) => [...prev, { name: newSubtaskName.trim(), scheduledTime: newSubtaskTime }]);
+      setNewSubtaskName('');
+      setNewSubtaskTime('');
+    }
+  };
+
+  const removeSubtask = (index: number) => {
+    setSubtaskItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async () => {
-    if (!task || !name.trim() || !amount) return;
+    if (!task || !name.trim() || (isHourly ? !perMinuteRate : !amount)) return;
+    if (hasSubtasks && subtaskItems.length === 0) return;
 
     let frequencyValue: Task['frequencyValue'];
     switch (frequencyType) {
@@ -103,11 +130,21 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       name: name.trim(),
       frequencyType,
       frequencyValue,
-      baseAmount: parseFloat(amount),
-      difficulty,
-      effortWeight,
+      // Matches CreateTaskDialog's convention: an hourly task carries no
+      // fixed amount, and its difficulty/effort are fixed rather than
+      // user-set, since its raise is a flat +₹0.50/min rather than a
+      // difficulty-scaled multiplier.
+      baseAmount: isHourly ? 0 : parseFloat(amount),
+      difficulty: isHourly ? 1 : difficulty,
+      effortWeight: isHourly ? 3 : effortWeight,
+      isHourly,
+      perMinuteRate: isHourly ? parseFloat(perMinuteRate) : 0,
       scheduledTime: scheduledTime || null,
       traits: traits.length > 0 ? traits : ['discipline'],
+      // Always sent, even as []: an empty list here means "delete every
+      // remaining subtask", which is exactly what turning the toggle off
+      // should do.
+      subtasks: hasSubtasks ? subtaskItems : [],
     });
 
     onOpenChange(false);
@@ -290,21 +327,57 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
             </div>
           )}
 
-          {/* Base Amount */}
-          <div className="space-y-2">
-            <Label htmlFor="edit-amount" className="text-sm font-semibold">Base Amount (₹)</Label>
-            <Input
-              id="edit-amount"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="e.g., 50"
-              className="h-11"
-              min="0"
-              step="0.01"
+          {/* Hourly Task Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-hourly-mode" className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="w-4 h-4 text-primary" />
+                Hourly Task
+              </Label>
+              <p className="text-xs text-muted-foreground">Pay based on time worked (per minute)</p>
+            </div>
+            <Switch
+              id="edit-hourly-mode"
+              checked={isHourly}
+              onCheckedChange={setIsHourly}
             />
-            <p className="text-xs text-muted-foreground">Changing base amount will recalculate current pay based on streaks</p>
           </div>
+
+          {isHourly ? (
+            /* Per Minute Rate for Hourly Tasks */
+            <div className="space-y-2">
+              <Label htmlFor="edit-perMinuteRate" className="text-sm font-semibold">Rate per Minute (₹)</Label>
+              <Input
+                id="edit-perMinuteRate"
+                type="number"
+                value={perMinuteRate}
+                onChange={(e) => setPerMinuteRate(e.target.value)}
+                placeholder="e.g., 1.5"
+                className="h-11"
+                min="0"
+                step="0.01"
+              />
+              <p className="text-xs text-muted-foreground">
+                Rate increases by ₹0.50 after completing a 7-day streak
+              </p>
+            </div>
+          ) : (
+            /* Base Amount */
+            <div className="space-y-2">
+              <Label htmlFor="edit-amount" className="text-sm font-semibold">Base Amount (₹)</Label>
+              <Input
+                id="edit-amount"
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g., 50"
+                className="h-11"
+                min="0"
+                step="0.01"
+              />
+              <p className="text-xs text-muted-foreground">Changing base amount will recalculate current pay based on streaks</p>
+            </div>
+          )}
 
           {/* Scheduled Time */}
           <div className="space-y-2">
@@ -351,6 +424,8 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
             <p className="text-xs text-muted-foreground">Full XP awarded to every selected trait.</p>
           </div>
 
+          {!isHourly && (
+          <>
           {/* Difficulty */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -417,9 +492,107 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
               {baseXpForEffort(effortWeight)} XP per completion. No effect on money.
             </p>
           </div>
+          </>
+          )}
+
+          {/* Has Subtasks Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-subtasks-mode" className="text-sm font-semibold flex items-center gap-2">
+                <ListChecks className="w-4 h-4 text-primary" />
+                Has Subtasks
+              </Label>
+              <p className="text-xs text-muted-foreground">Task completes only when all subtasks are done</p>
+            </div>
+            <Switch
+              id="edit-subtasks-mode"
+              checked={hasSubtasks}
+              onCheckedChange={setHasSubtasks}
+            />
+          </div>
+
+          {/* Subtasks Input */}
+          {hasSubtasks && (
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Subtasks (time is required)</Label>
+              {!isHourly && amount && subtaskItems.length > 0 && (
+                <p className="text-[11px] text-primary">
+                  Split: ₹{(parseFloat(amount) / subtaskItems.length).toFixed(2)} per subtask
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  value={newSubtaskName}
+                  onChange={(e) => setNewSubtaskName(e.target.value)}
+                  placeholder="Subtask name…"
+                  className="h-10 flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addSubtask();
+                    }
+                  }}
+                />
+                <Input
+                  type="time"
+                  value={newSubtaskTime}
+                  onChange={(e) => setNewSubtaskTime(e.target.value)}
+                  className="h-10 w-32"
+                  required
+                />
+                <Button
+                  type="button"
+                  onClick={addSubtask}
+                  variant="secondary"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={!newSubtaskName.trim() || !newSubtaskTime}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              {subtaskItems.length > 0 && (
+                <div className="space-y-2">
+                  {subtaskItems
+                    .map((subtask, originalIndex) => ({ subtask, originalIndex }))
+                    .sort((a, b) => a.subtask.scheduledTime.localeCompare(b.subtask.scheduledTime))
+                    .map(({ subtask, originalIndex }) => (
+                      <div key={subtask.id ?? `new-${originalIndex}`} className="flex items-center justify-between p-2 rounded-lg bg-card border border-border">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs font-bold tabular-nums text-primary shrink-0">
+                            {subtask.scheduledTime}
+                          </span>
+                          <span className="text-sm truncate">{subtask.name}</span>
+                          {subtask.id && (
+                            <span className="text-[10px] text-muted-foreground shrink-0">saved</span>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                          onClick={() => removeSubtask(originalIndex)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                </div>
+              )}
+              {subtaskItems.length === 0 && (
+                <p className="text-xs text-muted-foreground">Add at least one subtask (name + time)</p>
+              )}
+            </div>
+          )}
 
           {/* Submit */}
-          <Button onClick={handleSubmit} className="w-full" size="lg" disabled={!name.trim() || !amount}>
+          <Button
+            onClick={handleSubmit}
+            className="w-full"
+            size="lg"
+            disabled={!name.trim() || (isHourly ? !perMinuteRate : !amount) || (hasSubtasks && subtaskItems.length === 0)}
+          >
             Save Changes
           </Button>
         </div>
