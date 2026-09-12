@@ -54,8 +54,17 @@ function buildFires(tasks: Task[], now: Date): Fire[] {
 
       const taskAt = new Date(day);
       taskAt.setHours(hm.h, hm.m, 0, 0);
-      const fireAt = new Date(taskAt.getTime() - REMINDER_LEAD_MIN * 60_000);
-      if (fireAt.getTime() <= now.getTime() + 30_000) continue; // skip if past or too soon
+      const idealFireAt = new Date(taskAt.getTime() - REMINDER_LEAD_MIN * 60_000);
+      // The task itself has already started (or starts in under 30s) —
+      // nothing useful left to remind about.
+      if (taskAt.getTime() <= now.getTime() + 30_000) continue;
+      // The ideal lead time has already passed (task is due sooner than
+      // REMINDER_LEAD_MIN away) but the task hasn't started yet: fire almost
+      // immediately instead of silently dropping the reminder. This is the
+      // case a task created with only a few minutes' notice hits every time.
+      const fireAt = idealFireAt.getTime() > now.getTime() + 30_000
+        ? idealFireAt
+        : new Date(now.getTime() + 10_000);
 
       out.push({
         id: idFor(task.id, key),

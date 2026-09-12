@@ -9,7 +9,18 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 
 const REMINDER_LEAD_MIN = 5;
-const WINDOW_MIN = 1; // matches cron cadence
+// A single fixed-width slice at exactly now+LEAD..now+LEAD+1 missed any task
+// due SOONER than the lead time -- its target instant is already earlier
+// than the window's own start, so it can never be caught. That was the
+// whole bug: a task scheduled 3 minutes out, with a 5-minute lead, computes
+// a target that is always < windowStart, on every single cron tick, forever.
+//
+// The window is now everything from "right now" through "LEAD minutes from
+// now": a task created with plenty of runway still matches for the first
+// time at exactly T-lead (same behaviour as before), while a task due
+// sooner than the lead time matches on the very next tick instead of being
+// silently dropped. sent_reminders still dedupes repeat matches across
+// ticks, so widening this is strictly safer, not just a special case.
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -111,8 +122,7 @@ function parseHHmm(t: string): { h: number; m: number } | null {
 Deno.serve(async (_req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const utcNow = new Date();
-  const windowStartMs = utcNow.getTime() + REMINDER_LEAD_MIN * 60_000;
-  const windowEndMs = windowStartMs + WINDOW_MIN * 60_000;
+  const windowEndMs = utcNow.getTime() + REMINDER_LEAD_MIN * 60_000;
 
   // Load all subscriptions once; keep the most recent tz per device.
   const { data: allSubs, error: subsErr } = await supabase
@@ -172,7 +182,9 @@ Deno.serve(async (_req) => {
     );
     const targetUtcMs = wallMs - offset * 60_000;
 
-    if (targetUtcMs < windowStartMs || targetUtcMs >= windowEndMs) continue;
+    // Anywhere from now through the lead time ahead: due soon enough to
+    // remind about, not yet started, not so far out it's premature.
+    if (targetUtcMs < utcNow.getTime() || targetUtcMs > windowEndMs) continue;
 
     dueTasks.push({ task: t, localDateStr: ymdShifted(localNow) });
   }

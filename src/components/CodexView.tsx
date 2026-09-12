@@ -424,8 +424,10 @@ export function CodexView() {
             Safari refuses notifications from an ordinary tab.
           </Block>
           <Block title="Task due">
-            A task with a scheduled time pushes a notification just before it falls due. Subtasks
-            carry their own times and are reminded separately.
+            A task with a scheduled time pushes a notification{' '}
+            <B>5 minutes before</B> it falls due — set one less than 5 minutes out and it fires
+            almost immediately instead, rather than being silently missed. Subtasks carry their
+            own times and are reminded separately.
           </Block>
           <Block title="Streak at risk (8pm)">
             If a task is <B>5 or 6 of 7</B> and still not done, you get a warning naming exactly
