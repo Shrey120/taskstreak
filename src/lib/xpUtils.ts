@@ -87,7 +87,14 @@ export function levelForXp(totalXp: number): LevelInfo {
 }
 
 
-export function rankTitle(level: number): string {
+/**
+ * Your CURRENT standing, derived from net XP. Unlike Legacy rank this can
+ * fall: penalties subtract from net XP, so a bad stretch moves you back down
+ * the scale. Legacy rank (E -> S*n, in lib/legacy.ts) is the permanent,
+ * unbounded counterpart that failure never touches -- the two are different
+ * measurements and deliberately do not agree.
+ */
+export function standingTitle(level: number): string {
   if (level <= -50) return 'Adrift';
   if (level <= -20) return 'Slipping';
   if (level <= -5) return 'Shaky';
@@ -98,8 +105,8 @@ export function rankTitle(level: number): string {
   return 'Legendary';
 }
 
-export function characterRank(avgLevel: number): string {
-  return rankTitle(Math.round(avgLevel));
+export function characterStanding(avgLevel: number): string {
+  return standingTitle(Math.round(avgLevel));
 }
 
 // Base XP per completion by task difficulty (1..5 → easy/medium/hard buckets).

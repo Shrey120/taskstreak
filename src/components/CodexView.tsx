@@ -1,4 +1,4 @@
-import { TRAITS, baseXpForDifficulty, rankTitle, levelForXp } from '@/lib/xpUtils';
+import { TRAITS, baseXpForDifficulty, standingTitle, levelForXp } from '@/lib/xpUtils';
 import { DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { useTasks } from '@/contexts/TaskContext';
 import { buildLegacyStats } from '@/lib/legacy';
@@ -192,24 +192,32 @@ export function CodexView() {
           </div>
 
           <Block title="Why this exists">
-            The wallet has a ceiling because it gates real spending. Legacy has none. It counts only
-            what you have already done, is never spent, never decays, and no failure reduces it —
-            penalties cost you level, never legacy. Ranks run{' '}
+            Legacy counts only what you have already done. It is never spent, never decays, and no
+            failure reduces it — penalties cost you standing, never legacy. Ranks run{' '}
             <span className="text-primary font-semibold">E → D → C → B → A → S</span>, then S★1, S★2,
             and onward with no end. Each rank costs 40% more than the last.
+          </Block>
+          <Block title="Rank is not Standing">
+            Two different measurements, and they are meant to disagree.{' '}
+            <span className="text-primary font-semibold">Rank</span> is lifetime and only ever rises
+            — it counts positive XP only, on a curve that grows 40% per tier.{' '}
+            <span className="text-primary font-semibold">Standing</span> (Adrift → Legendary, below)
+            is your current condition from <em>net</em> XP, on a flat 10,000-per-level scale, and it
+            falls when you fail. Being Rank S★3 while Standing reads Balanced is the system working:
+            you have done a great deal, and you are not on form right now.
           </Block>
         </div>
       </section>
 
       {/* Live level progress */}
       <section>
-        <SectionTitle icon={<Trophy className="h-3.5 w-3.5" />}>Your level progress</SectionTitle>
+        <SectionTitle icon={<Trophy className="h-3.5 w-3.5" />}>Your level &amp; standing</SectionTitle>
         <div className="space-y-4 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
           <div>
             <div className="flex items-baseline justify-between gap-3">
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-2xl font-bold tabular-nums text-foreground">Lv {currentLevel}</span>
-                <span className="text-xs font-semibold uppercase tracking-wider text-primary">{rankTitle(currentLevel)}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-primary">{standingTitle(currentLevel)}</span>
               </div>
               <span className="text-xs tabular-nums text-muted-foreground">{totalXp.toLocaleString()} XP total</span>
             </div>
@@ -228,7 +236,7 @@ export function CodexView() {
                 <tr>
                   <th className="py-1 pr-4 text-left">Level</th>
                   <th className="py-1 pr-4 text-left">XP remaining</th>
-                  <th className="py-1 text-left">Rank</th>
+                  <th className="py-1 text-left">Standing</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,7 +267,7 @@ export function CodexView() {
                           </span>
                         )}
                       </td>
-                      <td className="py-1.5 text-foreground/80">{rankTitle(n)}</td>
+                      <td className="py-1.5 text-foreground/80">{standingTitle(n)}</td>
                     </tr>
                   );
                 })}
@@ -271,7 +279,7 @@ export function CodexView() {
 
       {/* Ranks */}
       <section>
-        <SectionTitle>Rank titles</SectionTitle>
+        <SectionTitle>Standing titles</SectionTitle>
         <div className="overflow-hidden rounded-xl border border-border/50 bg-card/50">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-widest text-muted-foreground">

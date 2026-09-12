@@ -1,5 +1,5 @@
 import { useTasks } from '@/contexts/TaskContext';
-import { TRAITS, levelForXp, rankTitle, characterRank } from '@/lib/xpUtils';
+import { TRAITS, levelForXp, standingTitle, characterStanding } from '@/lib/xpUtils';
 import { computeMaxWeeklyXp } from '@/lib/maxWeeklyXp';
 import { cn } from '@/lib/utils';
 import { Flame, TrendingDown, TrendingUp, Target } from 'lucide-react';
@@ -19,7 +19,7 @@ export function GrowthView() {
   const avgLevel = rows.reduce((s, r) => s + r.info.level, 0) / (rows.length || 1);
   const totalLevel = rows.reduce((s, r) => s + r.info.level, 0);
   const totalXp = rows.reduce((s, r) => s + r.xp, 0);
-  const overall = characterRank(avgLevel);
+  const overall = characterStanding(avgLevel);
   const overallNegative = totalLevel < 0;
 
   // Axis reaches one full level past the furthest trait.
@@ -56,7 +56,7 @@ export function GrowthView() {
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground sm:text-xs">
-                Character · {overall}
+                Standing · {overall}
               </div>
               <div className="flex items-baseline gap-2">
                 <span className={cn(
@@ -238,7 +238,7 @@ export function GrowthView() {
                   <div>
                     <div className={cn('font-semibold', t.color)}>{t.name}</div>
                     <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                      {rankTitle(info.level)}
+                      {standingTitle(info.level)}
                     </div>
                   </div>
                 </div>

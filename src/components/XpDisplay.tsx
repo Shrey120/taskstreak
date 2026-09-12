@@ -1,5 +1,5 @@
 import { useTasks } from '@/contexts/TaskContext';
-import { TRAITS, levelForXp, rankTitle } from '@/lib/xpUtils';
+import { TRAITS, levelForXp, standingTitle } from '@/lib/xpUtils';
 import { cn } from '@/lib/utils';
 import { Flame } from 'lucide-react';
 
@@ -27,7 +27,7 @@ export function XpDisplay() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Level · {rankTitle(info.level)}
+            Level · {standingTitle(info.level)}
           </div>
           <div className="flex items-baseline gap-1.5">
             <span
