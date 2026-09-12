@@ -8,7 +8,10 @@ const config: CapacitorConfig = {
   // as a real installed native app (no redirect to Chrome / the Lovable preview).
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
+      // Real resources now: res/drawable/ic_stat_taskstreak.xml and
+      // res/raw/chime.wav. The previous names were scaffolding placeholders
+      // that never existed, so Android silently fell back to defaults.
+      smallIcon: 'ic_stat_taskstreak',
       iconColor: '#F97316',
       sound: 'chime.wav',
     },

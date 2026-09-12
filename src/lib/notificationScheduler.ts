@@ -12,6 +12,21 @@ import { DIFFICULTY_MULTIPLIERS, type Task } from '@/types/task';
 
 export const REMINDER_LEAD_MIN = 5;
 
+/**
+ * Android channel settings (sound, importance) are frozen when the channel is
+ * first created and silently ignored on every later createChannel with the
+ * same id. chime.wav did not exist when v1 was registered, so those channels
+ * are permanently stuck on the default sound -- the id has to change for the
+ * new one to apply, and the stale channels are removed so they stop showing
+ * up as dead entries in Android's notification settings.
+ */
+const CH_TASKS = 'task-reminders-v2';
+const CH_ALERTS = 'streak-alerts-v2';
+const RETIRED_CHANNELS = ['task-reminders', 'streak-alerts'];
+
+const NOTIF_ICON = 'ic_stat_taskstreak';
+const NOTIF_COLOR = '#F97316';
+
 /** Local hour the evening alerts fire at. Mirrors the edge function. */
 const EVENING_HOUR = 20;
 /** Warn once a task is this close to closing its cycle. */
@@ -53,7 +68,10 @@ interface Fire {
   title: string;
   body: string;
   fireAt: Date;
-  channelId: 'task-reminders' | 'streak-alerts';
+  channelId: typeof CH_TASKS | typeof CH_ALERTS;
+  /** Expanded text when the notification is pulled open. */
+  largeBody?: string;
+  summaryText?: string;
   /** Android keeps these up until dismissed — used for streak risk only. */
   sticky?: boolean;
 }
@@ -88,9 +106,10 @@ function buildFires(tasks: Task[], now: Date, ctx: ReminderContext): Fire[] {
       out.push({
         id: idFor(task.id, key),
         title: `⏰ ${task.name}`,
-        body: `Starts in ${REMINDER_LEAD_MIN} minutes`,
+        body: `Starts in ${REMINDER_LEAD_MIN} minutes · ${task.scheduledTime}`,
+        summaryText: task.scheduledTime ?? undefined,
         fireAt,
-        channelId: 'task-reminders',
+        channelId: CH_TASKS,
       });
     }
   }
@@ -142,14 +161,20 @@ function buildEveningFires(tasks: Task[], now: Date, ctx: ReminderContext): Fire
         : `a raise to ${money(task.amount * mult)}`;
       const stake = task.isHourly ? '' : ` Missing it costs ${money(task.amount)}.`;
 
+      const headline = left === 1
+        ? `Last one — finish today for ${raise}.`
+        : `${left} to go. Break it now and the streak resets to zero.`;
+
       out.push({
         id: idFor(`risk|${task.id}`, key),
         title: `🔥 ${streak}/${cycle} — ${task.name}`,
-        body: left === 1
-          ? `Last one. Finish today to close the cycle and earn ${raise}.${stake}`
-          : `${left} to go. Break it now and the streak resets to zero.${stake}`,
+        body: headline,
+        largeBody: left === 1
+          ? `Close the cycle today and this task earns ${raise}.${stake}\n\nMiss it and the streak resets to zero, taking the raise with it.`
+          : `${left} more completions close the cycle and earn ${raise}.${stake}`,
+        summaryText: `${streak} of ${cycle}`,
         fireAt,
-        channelId: 'streak-alerts',
+        channelId: CH_ALERTS,
         sticky: true,
       });
     }
@@ -168,15 +193,25 @@ function buildEveningFires(tasks: Task[], now: Date, ctx: ReminderContext): Fire
       }
     }
 
+    const quiet = done === 0 && failed === 0;
     out.push({
       id: idFor('digest', key),
       title: '📜 Your week',
-      body: done === 0 && failed === 0
+      body: quiet
         ? 'Nothing logged this week. A fresh week starts tomorrow.'
-        : `${money(earned)} earned · ${done} done` + (failed ? ` · ${failed} missed` : '') +
-          '. Open the Report for the full picture.',
+        : `${money(earned)} earned · ${done} done` + (failed ? ` · ${failed} missed` : ''),
+      largeBody: quiet
+        ? 'Nothing logged this week. A fresh week starts tomorrow.'
+        : [
+            `Earned: ${money(earned)}`,
+            `Completed: ${done}`,
+            ...(failed ? [`Missed: ${failed}`] : []),
+            '',
+            'Open the Report for trait movement and what slipped.',
+          ].join('\n'),
+      summaryText: 'Weekly digest',
       fireAt,
-      channelId: 'streak-alerts',
+      channelId: CH_ALERTS,
     });
   }
   return out;
@@ -219,13 +254,19 @@ async function scheduleNative(fires: Fire[]) {
       title: f.title,
       body: f.body,
       schedule: { at: f.fireAt, allowWhileIdle: true },
-      // Both resource names below are placeholders that do not exist yet; the
-      // Capacitor plugin falls back to Android's defaults when a named
-      // resource is missing, so this is cosmetic rather than load-bearing.
       sound: 'chime.wav',
-      smallIcon: 'ic_stat_icon_config_sample',
+      smallIcon: NOTIF_ICON,
+      iconColor: NOTIF_COLOR,
       channelId: f.channelId,
+      // Long bodies are truncated to one line until expanded; largeBody is
+      // what the expanded view shows, so the stake and the reward stay
+      // readable without opening the app.
+      largeBody: f.largeBody ?? f.body,
+      summaryText: f.summaryText,
+      // Streak warnings stay up until dealt with; everything else clears on tap.
       ongoing: f.sticky === true,
+      autoCancel: f.sticky !== true,
+      group: f.channelId,
     })),
   });
 }
@@ -247,23 +288,30 @@ async function scheduleWeb(_fires: Fire[]) {
 export async function initReminders() {
   if (isNative()) {
     try {
+      for (const id of RETIRED_CHANNELS) {
+        await LocalNotifications.deleteChannel({ id }).catch(() => undefined);
+      }
       await LocalNotifications.createChannel({
-        id: 'task-reminders',
+        id: CH_TASKS,
         name: 'Task reminders',
         description: 'Fires before every scheduled task',
         importance: 5,
         sound: 'chime.wav',
         vibration: true,
+        lights: true,
+        lightColor: NOTIF_COLOR,
       });
       // Separate channel so streak warnings and the weekly digest can be
       // muted independently of routine task reminders in Android settings.
       await LocalNotifications.createChannel({
-        id: 'streak-alerts',
+        id: CH_ALERTS,
         name: 'Streak alerts & weekly digest',
         description: 'Evening warning when a streak is about to break, and the Sunday summary',
         importance: 5,
         sound: 'chime.wav',
         vibration: true,
+        lights: true,
+        lightColor: NOTIF_COLOR,
       });
     } catch (e) {
       // channel API is Android-only; iOS will throw — safe to ignore
