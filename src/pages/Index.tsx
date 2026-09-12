@@ -88,7 +88,7 @@ function Dashboard() {
           </div>
         </header>
 
-        <AppTopNav view={view} onSelect={setView} />
+        <AppTopNav view={view} onSelect={setView} wide={wide} />
 
         <main
           className={cn(

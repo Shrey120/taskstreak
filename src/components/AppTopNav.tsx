@@ -11,6 +11,9 @@ import { Flame, LogOut, Plus, Sparkles, Wallet } from 'lucide-react';
 interface AppTopNavProps {
   view: ViewType;
   onSelect: (view: ViewType) => void;
+  /** Matches Index's own per-view width so the nav bar never sits wider or
+   *  narrower than the header/content directly below it. */
+  wide: boolean;
 }
 
 /**
@@ -22,7 +25,7 @@ interface AppTopNavProps {
  * Phones and tablets are untouched: they still get the hamburger drawer and
  * bottom tab bar from AppNavDrawer / BottomNav.
  */
-export function AppTopNav({ view, onSelect }: AppTopNavProps) {
+export function AppTopNav({ view, onSelect, wide }: AppTopNavProps) {
   const { wallet, traitXp } = useTasks();
   const { user, logout } = useAuth();
   const totalXp = TRAITS.reduce((s, t) => s + (traitXp[t.id] || 0), 0);
@@ -30,7 +33,7 @@ export function AppTopNav({ view, onSelect }: AppTopNavProps) {
 
   return (
     <div className="sticky top-14 z-20 hidden border-b border-border/50 bg-background/80 backdrop-blur-xl lg:top-16 lg:block">
-      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-gutter">
+      <div className={cn('mx-auto flex h-14 items-center gap-2 px-gutter', wide ? 'max-w-[1440px]' : 'max-w-4xl')}>
         <span className="mr-1 flex shrink-0 items-center gap-1.5">
           <span className="font-display text-base font-bold text-foreground">TaskStreak</span>
           <Sparkles className="h-3.5 w-3.5 text-accent" />
@@ -101,7 +104,7 @@ export function AppTopNav({ view, onSelect }: AppTopNavProps) {
         </Tooltip>
       </div>
 
-      <div className="mx-auto flex h-11 max-w-[1440px] items-center gap-1 border-t border-border/40 px-gutter">
+      <div className={cn('mx-auto flex h-11 items-center gap-1 border-t border-border/40 px-gutter', wide ? 'max-w-[1440px]' : 'max-w-4xl')}>
         <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
           {METRIC_TABS.map((t) => {
             const id = `metric:${t.id}` as ViewType;
