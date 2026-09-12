@@ -28,6 +28,11 @@ interface TaskRow {
   frequency_type: string;
   // deno-lint-ignore no-explicit-any
   frequency_value: any;
+  current_streak: number | null;
+  amount: number;
+  difficulty: number;
+  is_hourly: boolean;
+  per_minute_rate: number;
 }
 
 interface SubRow {
@@ -51,18 +56,40 @@ function dayNameShifted(d: Date) {
   return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d.getUTCDay()];
 }
 
+/** Mirrors src/lib/schedule.ts. Kept in sync by hand — Deno cannot import from src/. */
+function isMonthDayDue(days: number[], localDate: Date): boolean {
+  const dom = localDate.getUTCDate();
+  const lastDom = new Date(Date.UTC(localDate.getUTCFullYear(), localDate.getUTCMonth() + 1, 0)).getUTCDate();
+  return days.some((d) => d === dom || (d > lastDom && dom === lastDom));
+}
+
+function mondayOfShifted(d: Date): Date {
+  const out = new Date(d.getTime());
+  out.setUTCDate(out.getUTCDate() - ((out.getUTCDay() + 6) % 7));
+  return out;
+}
+
 function isTaskDueOnShiftedDate(task: TaskRow, localDate: Date): boolean {
   const dateStr = ymdShifted(localDate);
   if (task.start_date > dateStr) return false;
   const dow = localDate.getUTCDay();
-  const dom = localDate.getUTCDate();
   const name = dayNameShifted(localDate);
   const fv = task.frequency_value;
   switch (task.frequency_type) {
     case 'weekly':
       return Array.isArray(fv) && fv.includes(dow);
     case 'monthly':
-      return Array.isArray(fv) && fv.includes(dom);
+      return Array.isArray(fv) && isMonthDayDue(fv as number[], localDate);
+    case 'every-n-weeks': {
+      const v = fv as { interval?: number; days?: number[]; anchor?: string } | null;
+      if (!v || !Array.isArray(v.days) || !v.days.includes(dow) || !v.anchor) return false;
+      const interval = Math.max(1, Math.floor(v.interval ?? 1));
+      if (interval === 1) return true;
+      const anchorMonday = mondayOfShifted(new Date(`${v.anchor}T12:00:00Z`));
+      const thisMonday = mondayOfShifted(localDate);
+      const weeks = Math.abs(Math.round((thisMonday.getTime() - anchorMonday.getTime()) / 86400000 / 7));
+      return weeks % interval === 0;
+    }
     case 'specific-date':
       return fv === dateStr;
     case 'specific-day':
@@ -107,7 +134,7 @@ Deno.serve(async (_req) => {
   // 1. Load scheduled tasks (any device with a scheduled_time).
   const { data: tasks, error: tasksErr } = await supabase
     .from('tasks')
-    .select('id,device_id,name,scheduled_time,start_date,frequency_type,frequency_value')
+    .select('id,device_id,name,scheduled_time,start_date,frequency_type,frequency_value,current_streak,amount,difficulty,is_hourly,per_minute_rate')
     .not('scheduled_time', 'is', null);
   if (tasksErr) return new Response(tasksErr.message, { status: 500 });
 
@@ -171,14 +198,14 @@ Deno.serve(async (_req) => {
   );
 
   // 4. Dedupe against sent_reminders (per local date).
-  const { data: alreadySent } = await supabase
+  const { data: sentRows } = await supabase
     .from('sent_reminders')
     .select('task_id,reminder_date')
     .in('task_id', dueIds)
     .in('reminder_date', localDates)
     .eq('reminder_type', 'pre-5min');
   const sentKey = new Set(
-    (alreadySent ?? []).map((r) => `${r.task_id}|${r.reminder_date}`),
+    (sentRows ?? []).map((r) => `${r.task_id}|${r.reminder_date}`),
   );
 
   const toSend = dueTasks.filter(
@@ -186,12 +213,8 @@ Deno.serve(async (_req) => {
       !completedKey.has(`${d.task.id}|${d.localDateStr}`) &&
       !sentKey.has(`${d.task.id}|${d.localDateStr}`),
   );
-  if (!toSend.length) {
-    return new Response(JSON.stringify({ ok: true, sent: 0 }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
+  // NOTE: no early return when `toSend` is empty — the evening passes below
+  // run on their own schedule and must still be reached on a quiet minute.
   let sentCount = 0;
   const expiredEndpoints: string[] = [];
 
@@ -246,6 +269,15 @@ Deno.serve(async (_req) => {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Evening passes: streak-risk alerts, and the Sunday digest.
+  // Both fire in the device's own local evening, deduped per local date.
+  // ---------------------------------------------------------------------
+  const extra = await sendEveningAlerts(
+    supabase, (tasks ?? []) as TaskRow[], subsByDevice, tzByDevice, completedKey, expiredEndpoints,
+  );
+  sentCount += extra;
+
   if (expiredEndpoints.length) {
     await supabase.from('push_subscriptions').delete().in('endpoint', expiredEndpoints);
   }
@@ -255,3 +287,167 @@ Deno.serve(async (_req) => {
     { headers: { 'Content-Type': 'application/json' } },
   );
 });
+
+/** Local hour at which the evening passes fire. */
+const EVENING_HOUR = 20;
+/** Warn once a task is this close to closing its 7-completion cycle. */
+const RISK_AT = 5;
+const CYCLE = 7;
+const DIFFICULTY_MULTIPLIERS: Record<number, number> = { 1: 1.5, 2: 2, 3: 2.5, 4: 3, 5: 4 };
+
+const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+// deno-lint-ignore no-explicit-any
+async function sendEveningAlerts(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  tasks: TaskRow[],
+  subsByDevice: Map<string, SubRow[]>,
+  tzByDevice: Map<string, number>,
+  completedKey: Set<string>,
+  expiredEndpoints: string[],
+): Promise<number> {
+  const now = Date.now();
+  let sent = 0;
+
+  for (const [deviceId, subs] of subsByDevice) {
+    if (!subs.length) continue;
+    const tz = tzByDevice.get(deviceId) ?? 0;
+    const local = new Date(now + tz * 60000);
+    // Only run in the minute the evening hour begins, so the cron's per-minute
+    // cadence cannot fire this repeatedly through the hour.
+    if (local.getUTCHours() !== EVENING_HOUR || local.getUTCMinutes() !== 0) continue;
+
+    const localDateStr = ymdShifted(local);
+    const isSunday = local.getUTCDay() === 0;
+    const deviceTasks = tasks.filter((t) => t.device_id === deviceId);
+
+    // --- streak-risk: due today, not done, and close to a cycle close ---
+    const atRisk = deviceTasks.filter((t) => {
+      if (!isTaskDueOnShiftedDate(t, local)) return false;
+      if (completedKey.has(`${t.id}|${localDateStr}`)) return false;
+      const streak = t.current_streak ?? 0;
+      return streak >= RISK_AT && streak < CYCLE;
+    });
+
+    for (const task of atRisk) {
+      const streak = task.current_streak ?? 0;
+      const left = CYCLE - streak;
+      const mult = DIFFICULTY_MULTIPLIERS[task.difficulty] ?? 1.5;
+      const raise = task.is_hourly
+        ? 'a +₹0.50/min raise'
+        : `a raise to ${money(task.amount * mult)}`;
+      const stake = task.is_hourly ? '' : ` Missing it costs ${money(task.amount)}.`;
+
+      const ok = await pushToDevice(supabase, subs, expiredEndpoints, {
+        title: `🔥 ${streak}/${CYCLE} — ${task.name}`,
+        body: left === 1
+          ? `Last one. Finish today to close the cycle and earn ${raise}.${stake}`
+          : `${left} to go. Break it now and the streak resets to zero.${stake}`,
+        tag: `risk-${task.id}-${localDateStr}`,
+        requireInteraction: true,
+        renotify: true,
+        vibrate: [200, 80, 200, 80, 200],
+        url: './',
+      });
+      if (!ok) continue;
+      sent++;
+      await markSent(supabase, deviceId, localDateStr, 'streak-risk', task.id);
+    }
+
+    // --- Sunday digest ---
+    if (!isSunday) continue;
+    if (await alreadySent(supabase, deviceId, localDateStr, 'weekly-digest')) continue;
+
+    const weekStart = new Date(local.getTime());
+    weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+    const weekStartStr = ymdShifted(weekStart);
+
+    const { data: weekRows } = await supabase
+      .from('task_completions')
+      .select('amount_earned,completed_date,task_id')
+      .eq('device_id', deviceId)
+      .gte('completed_date', weekStartStr)
+      .lte('completed_date', localDateStr);
+
+    const rows = weekRows ?? [];
+    // deno-lint-ignore no-explicit-any
+    const earned = rows.reduce((a: number, r: any) => a + (Number(r.amount_earned) > 0 ? Number(r.amount_earned) : 0), 0);
+    // deno-lint-ignore no-explicit-any
+    const done = rows.filter((r: any) => Number(r.amount_earned) > 0).length;
+    // deno-lint-ignore no-explicit-any
+    const failed = rows.filter((r: any) => Number(r.amount_earned) <= 0).length;
+
+    const body = done === 0 && failed === 0
+      ? 'Nothing logged this week. A fresh week starts tomorrow.'
+      : `${money(earned)} earned · ${done} done` + (failed ? ` · ${failed} missed` : '') +
+        '. Open the Report for the full picture.';
+
+    const ok = await pushToDevice(supabase, subs, expiredEndpoints, {
+      title: '📜 Your week',
+      body,
+      tag: `digest-${localDateStr}`,
+      vibrate: [120, 60, 120],
+      url: './',
+    });
+    if (ok) {
+      sent++;
+      await markSent(supabase, deviceId, localDateStr, 'weekly-digest', null);
+    }
+  }
+
+  return sent;
+}
+
+// deno-lint-ignore no-explicit-any
+async function alreadySent(supabase: any, deviceId: string, date: string, type: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('sent_reminders')
+    .select('id')
+    .eq('device_id', deviceId)
+    .eq('reminder_date', date)
+    .eq('reminder_type', type)
+    .limit(1);
+  return Boolean(data && data.length);
+}
+
+// deno-lint-ignore no-explicit-any
+async function markSent(supabase: any, deviceId: string, date: string, type: string, taskId: string | null) {
+  const { error } = await supabase.from('sent_reminders').insert({
+    device_id: deviceId,
+    task_id: taskId,
+    reminder_date: date,
+    reminder_type: type,
+  });
+  if (error && !error.message.includes('duplicate')) {
+    console.warn('[push] mark sent failed', type, error.message);
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function pushToDevice(
+  // deno-lint-ignore no-explicit-any
+  _supabase: any,
+  subs: SubRow[],
+  expiredEndpoints: string[],
+  // deno-lint-ignore no-explicit-any
+  payload: Record<string, any>,
+): Promise<boolean> {
+  const body = JSON.stringify(payload);
+  let anyOk = false;
+  for (const sub of subs) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        body,
+      );
+      anyOk = true;
+    } catch (err) {
+      // deno-lint-ignore no-explicit-any
+      const status = (err as any)?.statusCode;
+      if (status === 404 || status === 410) expiredEndpoints.push(sub.endpoint);
+      else console.warn('[push] send failed', status, (err as Error).message);
+    }
+  }
+  return anyOk;
+}

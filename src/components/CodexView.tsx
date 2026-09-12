@@ -417,9 +417,22 @@ export function CodexView() {
       <section>
         <SectionTitle icon={<Bell className="h-3.5 w-3.5" />}>Reminders &amp; sync</SectionTitle>
         <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
-          <Block title="Reminders">
-            A task with a scheduled time can push a notification when it falls due. Subtasks carry
-            their own times and are reminded separately.
+          <Block title="Turning them on">
+            <B>All tasks → Notifications</B>, once per device. Works in Chrome, Edge and Firefox on
+            desktop and Android. On iPhone you must add TaskStreak to the Home Screen first —
+            Safari refuses notifications from an ordinary tab.
+          </Block>
+          <Block title="Task due">
+            A task with a scheduled time pushes a notification just before it falls due. Subtasks
+            carry their own times and are reminded separately.
+          </Block>
+          <Block title="Streak at risk (8pm)">
+            If a task is <B>5 or 6 of 7</B> and still not done, you get a warning naming exactly
+            what the miss costs and what closing the cycle would pay. These stay on screen until
+            dismissed — it is the highest-stakes moment in the system.
+          </Block>
+          <Block title="Sunday digest (8pm)">
+            Earned, completed and missed for the week just gone, with a nudge to open the Report.
           </Block>
           <Block title="Same data everywhere">
             Tasks, completions, skips, missed subtasks, pauses, wallet, XP and the Stack all live

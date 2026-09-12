@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { TaskProvider } from '@/contexts/TaskContext';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { PauseManager } from '@/components/PauseManager';
+import { NotificationToggle } from '@/components/NotificationToggle';
 import { ReportView } from '@/components/ReportView';
 
 import { AllTasksView } from '@/components/AllTasksView';
@@ -133,7 +134,8 @@ function Dashboard() {
           )}
 
           {view === 'all' && (
-            <div className="mb-5 flex items-center justify-end">
+            <div className="mb-5 flex items-center justify-end gap-2">
+              <NotificationToggle />
               <PauseManager />
             </div>
           )}
