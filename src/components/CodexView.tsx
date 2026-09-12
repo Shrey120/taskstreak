@@ -419,9 +419,17 @@ export function CodexView() {
         <SectionTitle icon={<Bell className="h-3.5 w-3.5" />}>Reminders &amp; sync</SectionTitle>
         <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
           <Block title="Turning them on">
-            <B>All tasks → Notifications</B>, once per device. Works in Chrome, Edge and Firefox on
-            desktop and Android. On iPhone you must add TaskStreak to the Home Screen first —
-            Safari refuses notifications from an ordinary tab.
+            <B>All tasks → Notifications</B>, once per device, for the website. Works in Chrome,
+            Edge and Firefox on desktop and Android. On iPhone add TaskStreak to the Home Screen
+            first — Safari refuses notifications from an ordinary tab.
+          </Block>
+          <Block title="The installed Android app">
+            Needs no toggle and no server: it schedules everything on the phone itself, so
+            reminders, streak warnings and the Sunday digest all work offline. It plans a day or
+            two ahead and tops itself up whenever you open the app, so open it daily. If alerts
+            arrive late or not at all, set{' '}
+            <B>Settings → Apps → TaskStreak → Battery</B> to Unrestricted — Android otherwise
+            kills scheduled alarms.
           </Block>
           <Block title="Task due">
             A task with a scheduled time pushes a notification{' '}
