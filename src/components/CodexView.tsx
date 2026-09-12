@@ -92,21 +92,14 @@ export function CodexView() {
             Closing a cycle raises the pay: fixed amount is{' '}
             <span className="text-primary font-semibold">× the difficulty multiplier</span>,
             count rate <span className="text-primary font-semibold">+₹0.50 / min</span>.
-            Raises compound, but only under the two rules below.
+            No ceiling — this compounds for as long as you keep closing cycles.
           </Block>
           <Block title="A raise must be earned by the whole day">
             The cycle only pays out if you cleared{' '}
             <span className="text-primary font-semibold">at least 80%</span> of everything due that
             day. Finish one habit while the rest of the day rots and the cycle still counts, but the
-            raise does not land. One task can never run away from the others.
-          </Block>
-          <Block title="Ceiling">
-            A fixed task never pays more than{' '}
-            <span className="text-primary font-semibold">8 × the amount you typed</span>.
-            Difficulty decides how <em>fast</em> you reach that ceiling, not how high it is —
-            D5 gets there in 2 cycles, D1 takes 6. Count tasks cap at +₹4.00 / min.
-            The wallet is what you are allowed to spend, so it has to stay close to what you
-            could actually spend.
+            raise does not land. One task can never run away from the others — the growth has no
+            ceiling, but it has to be earned broadly to keep compounding.
           </Block>
           <Block title="Failure (✗)">
             Deducts the task's current amount from your wallet

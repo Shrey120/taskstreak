@@ -119,16 +119,7 @@ async function fetchPauseRanges(deviceId: string): Promise<PauseRange[]> {
 
 /** Share of a day's due tasks that must be done for that day to grant a raise. */
 const CLEAR_THRESHOLD = 0.8;
-/** Ceiling on hourly rate raises (each adds +0.5/min, so this is +4.0/min). */
-const MAX_RAISE_CYCLES = 8;
-/**
- * A fixed task can never pay more than this multiple of the amount you typed.
- * Difficulty decides how FAST you reach the ceiling, not how high it is --
- * without a ceiling the multiplier compounds past anything the wallet could
- * honestly gate, and a budget that outruns your real income stops being a
- * budget at all.
- */
-const MAX_RAISE_FACTOR = 8;
+
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -676,11 +667,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const dayCleared = scheduleClearedOn(date, taskId);
     // Past the cap a raise would outgrow anything the wallet could honestly
     // gate, so cycles keep counting but stop moving the rate.
-    const ceiling = task.baseAmount * MAX_RAISE_FACTOR;
-    const underCap = task.isHourly
-      ? task.streaksCompleted < MAX_RAISE_CYCLES
-      : task.amount < ceiling;
-    const grantsRaise = isWeeklyStreakComplete && dayCleared && underCap;
+    const grantsRaise = isWeeklyStreakComplete && dayCleared;
 
     let earnedAmount: number;
     let newTaskAmount = task.amount;
@@ -701,7 +688,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       earnedAmount = task.amount;
 
       if (grantsRaise) {
-        newTaskAmount = Math.min(task.amount * multiplier, ceiling);
+        newTaskAmount = task.amount * multiplier;
         newStreaksCompleted = task.streaksCompleted + 1;
       }
     }
@@ -1042,12 +1029,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const newBaseAmount = updates.baseAmount ?? task.baseAmount;
     const newDifficulty = updates.difficulty ?? task.difficulty;
     const multiplier = DIFFICULTY_MULTIPLIERS[newDifficulty];
-    // Same ceiling as the one applied when a raise is granted, so editing a
-    // task can never reconstruct an amount above the cap.
-    const raised = task.streaksCompleted > 0
+    const newAmount = task.streaksCompleted > 0
       ? newBaseAmount * Math.pow(multiplier, task.streaksCompleted)
       : newBaseAmount;
-    const newAmount = Math.min(raised, newBaseAmount * MAX_RAISE_FACTOR);
 
     const newTraits = (updates.traits && updates.traits.length > 0 ? updates.traits : task.traits) as TraitId[];
     const { error } = await supabase
