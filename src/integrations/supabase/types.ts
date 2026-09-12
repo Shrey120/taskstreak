@@ -248,6 +248,7 @@ export type Database = {
           current_streak: number | null
           device_id: string
           difficulty: number
+          effort_weight: number | null
           frequency_type: string
           frequency_value: Json
           id: string
@@ -267,6 +268,7 @@ export type Database = {
           current_streak?: number | null
           device_id: string
           difficulty: number
+          effort_weight?: number | null
           frequency_type: string
           frequency_value: Json
           id?: string
@@ -286,6 +288,7 @@ export type Database = {
           current_streak?: number | null
           device_id?: string
           difficulty?: number
+          effort_weight?: number | null
           frequency_type?: string
           frequency_value?: Json
           id?: string

@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { Task, DIFFICULTY_MULTIPLIERS } from '@/types/task';
-import { TraitId, TRAITS, baseXpForDifficulty } from '@/lib/xpUtils';
+import { TraitId, TRAITS, baseXpForEffort } from '@/lib/xpUtils';
 import { getStreakCycleLength } from '@/lib/streakUtils';
 import { isMonthDayDue } from '@/lib/periodUtils';
 
@@ -91,7 +91,7 @@ function ceilingBaseXp(task: Task): number {
   if (task.isHourly) {
     return Math.round(Math.max(0, task.perMinuteRate) * HOURLY_MAX_MINUTES);
   }
-  return baseXpForDifficulty(task.difficulty);
+  return baseXpForEffort(task.effortWeight ?? task.difficulty);
 }
 
 function awardForCompletion(task: Task, streakBefore: number, cycleLength: number): { xp: number; streakAfter: number } {

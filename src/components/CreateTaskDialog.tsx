@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { useTasks } from '@/contexts/TaskContext';
 import { Task, FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS, Subtask } from '@/types/task';
-import { TRAITS, TraitId } from '@/lib/xpUtils';
+import { TRAITS, TraitId, baseXpForEffort } from '@/lib/xpUtils';
 import { Plus, HelpCircle, CalendarIcon, Clock, X, ListChecks } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 import { format } from 'date-fns';
@@ -37,6 +37,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
   const [minDaysMonth, setMinDaysMonth] = useState('10');
   const [amount, setAmount] = useState('');
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [effortWeight, setEffortWeight] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [isHourly, setIsHourly] = useState(false);
   const [perMinuteRate, setPerMinuteRate] = useState('');
@@ -58,6 +59,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
     setMinDaysMonth('10');
     setAmount('');
     setDifficulty(1);
+    setEffortWeight(3);
     setStartDate(new Date());
     setIsHourly(false);
     setPerMinuteRate('');
@@ -128,6 +130,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
       amount: isHourly ? 0 : parseFloat(amount),
       baseAmount: isHourly ? 0 : parseFloat(amount),
       difficulty: isHourly ? 1 : difficulty,
+      effortWeight: isHourly ? 3 : effortWeight,
       startDate: format(startDate, 'yyyy-MM-dd'),
       scheduledTime: scheduledTime || null,
       isHourly,
@@ -461,7 +464,8 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                         <p>Difficulty 5 → 4x</p>
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Complete 7 days in a row to permanently multiply the task amount!
+                        Close a 7-completion cycle on a day you cleared to multiply the amount.
+                        Drives money only — XP comes from Effort below.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -484,7 +488,52 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Streak bonus: {DIFFICULTY_MULTIPLIERS[difficulty]}x multiplier
+                  Streak bonus: {DIFFICULTY_MULTIPLIERS[difficulty]}x multiplier. A task that
+                  recurs often reaches this multiplier far more times — keep daily habits low.
+                </p>
+              </div>
+
+              {/* Effort — XP only, independent of money growth */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-semibold">Effort</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs p-3">
+                      <p className="font-semibold mb-2">XP per completion:</p>
+                      <div className="space-y-1 text-sm">
+                        <p>Effort 1–2 → {baseXpForEffort(1)} XP</p>
+                        <p>Effort 3 → {baseXpForEffort(3)} XP</p>
+                        <p>Effort 4–5 → {baseXpForEffort(5)} XP</p>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        How much this actually takes out of you. Set it honestly — it has no
+                        effect on money.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex gap-2">
+                  {([1, 2, 3, 4, 5] as const).map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setEffortWeight(e)}
+                      className={cn(
+                        'flex-1 h-11 rounded-lg text-sm font-semibold transition-all',
+                        effortWeight === e
+                          ? 'gradient-primary text-primary-foreground shadow-glow'
+                          : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                      )}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {baseXpForEffort(effortWeight)} XP per completion
                 </p>
               </div>
             </>

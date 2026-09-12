@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTasks } from '@/contexts/TaskContext';
 import { Task, FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS } from '@/types/task';
-import { TRAITS, TraitId, isTraitId } from '@/lib/xpUtils';
+import { TRAITS, TraitId, isTraitId, baseXpForEffort } from '@/lib/xpUtils';
 import { HelpCircle, Clock } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
   const [minDaysMonth, setMinDaysMonth] = useState('10');
   const [amount, setAmount] = useState('');
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [effortWeight, setEffortWeight] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [scheduledTime, setScheduledTime] = useState('');
   const [weekInterval, setWeekInterval] = useState('2');
   const [weekAnchor, setWeekAnchor] = useState<string | null>(null);
@@ -44,6 +45,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       setFrequencyType(task.frequencyType);
       setAmount(task.baseAmount.toString());
       setDifficulty(task.difficulty);
+      setEffortWeight(task.effortWeight ?? task.difficulty);
       setScheduledTime(task.scheduledTime || '');
       setTraits(task.traits && task.traits.length > 0 ? task.traits : ['discipline']);
 
@@ -103,6 +105,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       frequencyValue,
       baseAmount: parseFloat(amount),
       difficulty,
+      effortWeight,
       scheduledTime: scheduledTime || null,
       traits: traits.length > 0 ? traits : ['discipline'],
     });
@@ -386,7 +389,32 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              Streak bonus: {DIFFICULTY_MULTIPLIERS[difficulty]}x multiplier
+              Streak bonus: {DIFFICULTY_MULTIPLIERS[difficulty]}x multiplier. Drives money only.
+            </p>
+          </div>
+
+          {/* Effort — XP only */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Effort</Label>
+            <div className="flex gap-2">
+              {([1, 2, 3, 4, 5] as const).map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setEffortWeight(e)}
+                  className={cn(
+                    'flex-1 h-11 rounded-lg text-sm font-semibold transition-all',
+                    effortWeight === e
+                      ? 'gradient-primary text-primary-foreground shadow-glow'
+                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                  )}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {baseXpForEffort(effortWeight)} XP per completion. No effect on money.
             </p>
           </div>
 

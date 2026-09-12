@@ -109,25 +109,31 @@ export function characterStanding(avgLevel: number): string {
   return standingTitle(Math.round(avgLevel));
 }
 
-// Base XP per completion by task difficulty (1..5 → easy/medium/hard buckets).
-export function baseXpForDifficulty(difficulty: number): number {
-  if (difficulty <= 2) return 100;   // easy
-  if (difficulty === 3) return 200;  // medium
-  return 350;                        // hard (4, 5)
+/**
+ * Base XP per completion by EFFORT WEIGHT (1..5 → light/moderate/heavy).
+ *
+ * This used to key off `difficulty`, which also drives money compounding —
+ * so throttling a daily habit's money growth silently cut the XP it earned.
+ * The two are independent now: difficulty paces money, effort weight pays XP.
+ */
+export function baseXpForEffort(effortWeight: number): number {
+  if (effortWeight <= 2) return 100;   // light
+  if (effortWeight === 3) return 200;  // moderate
+  return 350;                          // heavy (4, 5)
 }
 
 /**
  * Base XP for one completion.
- *   - Normal task: flat baseXp for its difficulty.
+ *   - Normal task: flat baseXp for its effort weight.
  *   - Hourly ("count") task: perMinuteRate × minutes worked (the money rate
  *     doubles as the XP rate). Rounded to a whole number.
  */
 export function baseXpForCompletion(
-  difficulty: number,
+  effortWeight: number,
   isHourly: boolean,
   perMinuteRate: number,
   minutesWorked: number,
 ): number {
   if (isHourly) return Math.round(Math.max(0, perMinuteRate) * Math.max(0, minutesWorked));
-  return baseXpForDifficulty(difficulty);
+  return baseXpForEffort(effortWeight);
 }

@@ -1,4 +1,4 @@
-import { TRAITS, baseXpForDifficulty, standingTitle, levelForXp } from '@/lib/xpUtils';
+import { TRAITS, baseXpForEffort, standingTitle, levelForXp } from '@/lib/xpUtils';
 import { DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { useTasks } from '@/contexts/TaskContext';
 import { buildLegacyStats } from '@/lib/legacy';
@@ -118,8 +118,10 @@ export function CodexView() {
         <SectionTitle icon={<Flame className="h-3.5 w-3.5" />}>XP</SectionTitle>
         <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
           <Block title="Base XP per completion">
-            Fixed task by difficulty — easy (1–2) <B>{baseXpForDifficulty(1)}</B>,
-            medium (3) <B>{baseXpForDifficulty(3)}</B>, hard (4–5) <B>{baseXpForDifficulty(5)}</B>.
+            Fixed task by <span className="text-primary font-semibold">effort</span> — light (1–2){' '}
+            <B>{baseXpForEffort(1)}</B>, moderate (3) <B>{baseXpForEffort(3)}</B>, heavy (4–5){' '}
+            <B>{baseXpForEffort(5)}</B>. Effort is separate from difficulty: difficulty paces money
+            growth, effort pays XP, and neither touches the other.
             Count task earns <B>rate × minutes</B> as XP (same number that drives its money).
           </Block>
           <Block title="Consistency bonus">

@@ -7,7 +7,7 @@ import { getStreakCycleLength, computeCurrentStreak, computeAtLeastRawStreak } f
 import { periodUnitFor, successesInPeriod } from '@/lib/periodUtils';
 import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange } from '@/lib/schedule';
 import {
-  TraitId, TRAITS, isTraitId, baseXpForDifficulty, baseXpForCompletion,
+  TraitId, TRAITS, isTraitId, baseXpForEffort, baseXpForCompletion,
 } from '@/lib/xpUtils';
 
 function normalizeTraits(...sources: unknown[]): TraitId[] {
@@ -49,7 +49,7 @@ interface TaskContextType {
   traitXp: Record<TraitId, number>;
   xpEvents: XpEvent[];
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'completions' | 'currentStreak' | 'streaksCompleted' | 'streakBrokenThisWeek'>) => Promise<void>;
-  updateTask: (taskId: string, updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'scheduledTime' | 'traits'>>) => Promise<void>;
+  updateTask: (taskId: string, updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' | 'scheduledTime' | 'traits'>>) => Promise<void>;
   completeTask: (taskId: string, date: Date, minutesWorked?: number) => Promise<void>;
   cancelTask: (taskId: string, date: Date) => Promise<void>;
   undoComplete: (taskId: string, date: Date) => Promise<void>;
@@ -305,6 +305,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           amount: Number(t.amount),
           baseAmount: Number(t.base_amount) || Number(t.amount),
           difficulty: t.difficulty as Task['difficulty'],
+          // Rows written before effort_weight existed fall back to difficulty,
+          // which is exactly the XP they earned under the old shared dial.
+          effortWeight: (t.effort_weight ?? t.difficulty) as Task['effortWeight'],
           createdAt: t.created_at || new Date().toISOString(),
           startDate: t.start_date || format(new Date(), 'yyyy-MM-dd'),
           scheduledTime: t.scheduled_time || null,
@@ -551,6 +554,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         amount: taskData.amount,
         base_amount: taskData.baseAmount,
         difficulty: taskData.difficulty,
+        effort_weight: taskData.effortWeight ?? taskData.difficulty,
         start_date: taskData.startDate,
         scheduled_time: taskData.scheduledTime || null,
         current_streak: 0,
@@ -603,6 +607,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         amount: Number(data.amount),
         baseAmount: Number((data as any).base_amount) || Number(data.amount),
         difficulty: data.difficulty as Task['difficulty'],
+        effortWeight: ((data as any).effort_weight ?? data.difficulty) as Task['effortWeight'],
         createdAt: data.created_at || new Date().toISOString(),
         startDate: (data as any).start_date || format(new Date(), 'yyyy-MM-dd'),
         scheduledTime: (data as any).scheduled_time || null,
@@ -741,7 +746,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     ]).catch((err) => console.error('Error syncing task completion:', err));
 
     // Award XP: base + consistency bonus (or mastery bonus on cycle completion) — full amount to each tagged trait
-    const baseXp = baseXpForCompletion(task.difficulty, task.isHourly, task.perMinuteRate, minutesWorked || 0);
+    const baseXp = baseXpForCompletion(task.effortWeight, task.isHourly, task.perMinuteRate, minutesWorked || 0);
     for (const tr of task.traits) {
       applyXp(tr, taskId, dateStr, baseXp, 'completion');
       if (isWeeklyStreakComplete) {
@@ -945,7 +950,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     ]).catch((err) => console.error('Error syncing task cancel:', err));
 
     // XP penalty: -60% base XP for the difficulty
-    const baseXp = baseXpForDifficulty(task.difficulty);
+    const baseXp = baseXpForEffort(task.effortWeight);
     const penalty = Math.round(baseXp * 0.6);
     for (const tr of task.traits) applyXp(tr, taskId, dateStr, -penalty, 'failure_penalty');
   };
@@ -1020,7 +1025,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const updateTask = async (
     taskId: string,
-    updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'scheduledTime' | 'traits'>>
+    updates: Partial<Pick<Task, 'name' | 'frequencyType' | 'frequencyValue' | 'baseAmount' | 'difficulty' | 'effortWeight' | 'scheduledTime' | 'traits'>>
   ) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -1043,6 +1048,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         base_amount: newBaseAmount,
         amount: newAmount,
         difficulty: newDifficulty,
+        effort_weight: updates.effortWeight ?? task.effortWeight,
         scheduled_time: updates.scheduledTime !== undefined ? updates.scheduledTime : (task.scheduledTime || null),
         traits: newTraits as any,
         trait: newTraits[0] || 'discipline',
@@ -1065,6 +1071,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               baseAmount: newBaseAmount,
               amount: newAmount,
               difficulty: newDifficulty,
+              effortWeight: updates.effortWeight ?? t.effortWeight,
               scheduledTime: updates.scheduledTime !== undefined ? updates.scheduledTime : t.scheduledTime,
               traits: newTraits,
             }
@@ -1274,7 +1281,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     Promise.all(jobs).catch((err) => console.error('markSubtaskMissed sync:', err));
 
     if (triggerFailure) {
-      const baseXp = baseXpForDifficulty(parentTask.difficulty);
+      const baseXp = baseXpForEffort(parentTask.effortWeight);
       const penalty = Math.round(baseXp * 0.6);
       for (const tr of parentTask.traits) applyXp(tr, parentTask.id, dateStr, -penalty, 'failure_penalty');
     }

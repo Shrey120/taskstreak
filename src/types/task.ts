@@ -17,7 +17,11 @@ export interface Task {
   frequencyValue: number[] | string | DayOfWeek | number | EveryNWeeksValue; // days of week (0-6), day of month (1-31), date string, day name, minimum count, or every-N-weeks config
   amount: number;
   baseAmount: number;
+  /** Money growth: the multiplier applied when a streak cycle closes. */
   difficulty: 1 | 2 | 3 | 4 | 5;
+  /** XP weight: how much effort one completion represents. Independent of
+   *  difficulty, so throttling a task's money growth no longer cuts its XP. */
+  effortWeight: 1 | 2 | 3 | 4 | 5;
   createdAt: string;
   startDate: string; // yyyy-MM-dd format
   scheduledTime: string | null; // HH:mm format or null
