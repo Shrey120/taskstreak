@@ -16,7 +16,6 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { DayPresetChips } from './DayPresetChips';
 import { WeeklyLoadPreview } from './WeeklyLoadPreview';
-import { parseTaskInput } from '@/lib/parseTaskInput';
 import { toKey, weekStartKey } from '@/lib/periodUtils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -33,7 +32,6 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
   const [selectedMonthDays, setSelectedMonthDays] = useState<number[]>([]);
   const [specificDate, setSpecificDate] = useState<Date>();
   const [weekInterval, setWeekInterval] = useState('2');
-  const [quickAdd, setQuickAdd] = useState('');
   const [specificDay, setSpecificDay] = useState<DayOfWeek>('monday');
   const [minDaysWeek, setMinDaysWeek] = useState('3');
   const [minDaysMonth, setMinDaysMonth] = useState('10');
@@ -149,31 +147,6 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
     );
   };
 
-  /**
-   * Fill the form from one typed line. Everything it understands lands in the
-   * normal controls below, so the parse is always visible and correctable
-   * before saving — nothing is applied invisibly.
-   */
-  const applyQuickAdd = () => {
-    const text = quickAdd.trim();
-    if (!text) return;
-    const parsed = parseTaskInput(text);
-    if (parsed.name) setName(parsed.name);
-    if (parsed.time) setScheduledTime(parsed.time);
-    if (parsed.everyNWeeks) {
-      setFrequencyType('every-n-weeks');
-      setWeekInterval(String(parsed.everyNWeeks));
-      if (parsed.days.length) setSelectedDays(parsed.days);
-    } else if (parsed.timesPerWeek) {
-      setFrequencyType('at-least-weekly');
-      setMinDaysWeek(String(parsed.timesPerWeek));
-    } else if (parsed.days.length) {
-      setFrequencyType('weekly');
-      setSelectedDays(parsed.days);
-    }
-    setQuickAdd('');
-  };
-
   const toggleMonthDay = (day: number) => {
     setSelectedMonthDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
@@ -207,28 +180,6 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
         </DialogHeader>
         
         <div className="space-y-5 py-4">
-          {/* Quick add — type it in one line, then check the fields below */}
-          <div className="space-y-2">
-            <Label htmlFor="quick-add" className="text-sm font-semibold">Quick add</Label>
-            <div className="flex gap-2">
-              <Input
-                id="quick-add"
-                value={quickAdd}
-                onChange={(e) => setQuickAdd(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyQuickAdd(); } }}
-                placeholder="gym mon wed fri 7am"
-                className="h-11"
-              />
-              <Button type="button" variant="outline" className="h-11 shrink-0"
-                      onClick={applyQuickAdd} disabled={!quickAdd.trim()}>
-                Fill
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Understands days, "weekdays", "every other week", "3x a week" and times.
-            </p>
-          </div>
-
           {/* Task Name */}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-semibold">Task Name</Label>
