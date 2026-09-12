@@ -117,6 +117,19 @@ async function fetchPauseRanges(deviceId: string): Promise<PauseRange[]> {
   return data.map((r) => ({ id: r.id, start: r.start_date, end: r.end_date, label: r.label ?? undefined }));
 }
 
+/** Share of a day's due tasks that must be done for that day to grant a raise. */
+const CLEAR_THRESHOLD = 0.8;
+/** Ceiling on hourly rate raises (each adds +0.5/min, so this is +4.0/min). */
+const MAX_RAISE_CYCLES = 8;
+/**
+ * A fixed task can never pay more than this multiple of the amount you typed.
+ * Difficulty decides how FAST you reach the ceiling, not how high it is --
+ * without a ceiling the multiplier compounds past anything the wallet could
+ * honestly gate, and a budget that outruns your real income stops being a
+ * budget at all.
+ */
+const MAX_RAISE_FACTOR = 8;
+
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [wallet, setWallet] = useState(0);
@@ -491,6 +504,31 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const dateKey = (d: Date) => format(d, 'yyyy-MM-dd');
 
+  /**
+   * Did this day's schedule actually get cleared? `justCompletedId` counts as
+   * done because this runs mid-completion, before state has committed.
+   *
+   * Flexible at-least-N tasks are ignored: they have no fixed due day, so
+   * they can neither block nor grant a raise.
+   */
+  const scheduleClearedOn = (date: Date, justCompletedId?: string): boolean => {
+    const dateStr = dateKey(date);
+    if (isPausedOn(pauseRanges, dateStr)) return false;
+
+    let due = 0;
+    let done = 0;
+    for (const t of tasks) {
+      if (t.frequencyType === 'at-least-weekly' || t.frequencyType === 'at-least-monthly') continue;
+      if (!isTaskDueOn(t, date)) continue;
+      if (dayOffSet.has(`${t.id}|${dateStr}`)) continue;
+      due++;
+      if (t.id === justCompletedId) { done++; continue; }
+      if (t.completions.some((c) => c.date === dateStr && c.earnedAmount > 0)) done++;
+    }
+    if (due === 0) return true;
+    return done / due >= CLEAR_THRESHOLD;
+  };
+
   /** Due by the task's own schedule, and not inside a vacation window. */
   const isTaskDueOnDate = (task: Task, date: Date) => {
     if (isPausedOn(pauseRanges, dateKey(date))) return false;
@@ -631,6 +669,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const newStreak = baseStreak + 1;
     const isWeeklyStreakComplete = newStreak === cycleLength;
 
+    // A raise is earned by the whole day, not by one task. Without this the
+    // multiplier compounds on a single habit while everything else rots —
+    // `streaksCompleted` is per-task and knows nothing about the rest of the
+    // schedule. Clearing the day is what unlocks the raise.
+    const dayCleared = scheduleClearedOn(date, taskId);
+    // Past the cap a raise would outgrow anything the wallet could honestly
+    // gate, so cycles keep counting but stop moving the rate.
+    const ceiling = task.baseAmount * MAX_RAISE_FACTOR;
+    const underCap = task.isHourly
+      ? task.streaksCompleted < MAX_RAISE_CYCLES
+      : task.amount < ceiling;
+    const grantsRaise = isWeeklyStreakComplete && dayCleared && underCap;
+
     let earnedAmount: number;
     let newTaskAmount = task.amount;
     let newPerMinuteRate = task.perMinuteRate;
@@ -639,9 +690,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (task.isHourly) {
       // Hourly task: earn based on minutes worked
       earnedAmount = (minutesWorked || 0) * task.perMinuteRate;
-      
-      if (isWeeklyStreakComplete) {
-        // Increase per minute rate by 0.5 after 7-day streak
+
+      if (grantsRaise) {
         newPerMinuteRate = task.perMinuteRate + 0.5;
         newStreaksCompleted = task.streaksCompleted + 1;
       }
@@ -649,9 +699,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // Regular task: fixed amount with difficulty multiplier
       const multiplier = DIFFICULTY_MULTIPLIERS[task.difficulty];
       earnedAmount = task.amount;
-      
-      if (isWeeklyStreakComplete) {
-        newTaskAmount = task.amount * multiplier;
+
+      if (grantsRaise) {
+        newTaskAmount = Math.min(task.amount * multiplier, ceiling);
         newStreaksCompleted = task.streaksCompleted + 1;
       }
     }
@@ -992,9 +1042,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const newBaseAmount = updates.baseAmount ?? task.baseAmount;
     const newDifficulty = updates.difficulty ?? task.difficulty;
     const multiplier = DIFFICULTY_MULTIPLIERS[newDifficulty];
-    const newAmount = task.streaksCompleted > 0 
+    // Same ceiling as the one applied when a raise is granted, so editing a
+    // task can never reconstruct an amount above the cap.
+    const raised = task.streaksCompleted > 0
       ? newBaseAmount * Math.pow(multiplier, task.streaksCompleted)
       : newBaseAmount;
+    const newAmount = Math.min(raised, newBaseAmount * MAX_RAISE_FACTOR);
 
     const newTraits = (updates.traits && updates.traits.length > 0 ? updates.traits : task.traits) as TraitId[];
     const { error } = await supabase

@@ -1,13 +1,15 @@
 import { TRAITS, baseXpForDifficulty, rankTitle, levelForXp } from '@/lib/xpUtils';
 import { DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { useTasks } from '@/contexts/TaskContext';
+import { buildLegacyStats } from '@/lib/legacy';
 import { cn } from '@/lib/utils';
-import { Check, Coins, Flame, Repeat, Trophy, XCircle } from 'lucide-react';
+import { Check, Coins, Flame, Repeat, Trophy, XCircle, Infinity as InfinityIcon } from 'lucide-react';
 
 const BAND = 10000;
 
 export function CodexView() {
-  const { traitXp } = useTasks();
+  const { traitXp, tasks, xpEvents } = useTasks();
+  const legacy = buildLegacyStats(tasks, xpEvents);
 
   const totalXp = TRAITS.reduce((s, t) => s + (traitXp[t.id] || 0), 0);
   const me = levelForXp(totalXp);
@@ -87,9 +89,24 @@ export function CodexView() {
             Count task pays <span className="text-primary font-semibold">rate × minutes</span> worked.
           </Block>
           <Block title="Streak raise (every 7-cycle)">
-            When a task completes a full streak cycle, its pay permanently rises:
-            fixed task amount is <span className="text-primary font-semibold">× the difficulty multiplier</span>,
-            count task rate <span className="text-primary font-semibold">+₹0.50 / min</span>. This compounds each cycle.
+            Closing a cycle raises the pay: fixed amount is{' '}
+            <span className="text-primary font-semibold">× the difficulty multiplier</span>,
+            count rate <span className="text-primary font-semibold">+₹0.50 / min</span>.
+            Raises compound, but only under the two rules below.
+          </Block>
+          <Block title="A raise must be earned by the whole day">
+            The cycle only pays out if you cleared{' '}
+            <span className="text-primary font-semibold">at least 80%</span> of everything due that
+            day. Finish one habit while the rest of the day rots and the cycle still counts, but the
+            raise does not land. One task can never run away from the others.
+          </Block>
+          <Block title="Ceiling">
+            A fixed task never pays more than{' '}
+            <span className="text-primary font-semibold">8 × the amount you typed</span>.
+            Difficulty decides how <em>fast</em> you reach that ceiling, not how high it is —
+            D5 gets there in 2 cycles, D1 takes 6. Count tasks cap at +₹4.00 / min.
+            The wallet is what you are allowed to spend, so it has to stay close to what you
+            could actually spend.
           </Block>
           <Block title="Failure (✗)">
             Deducts the task's current amount from your wallet
@@ -148,6 +165,45 @@ export function CodexView() {
           </Block>
           <Block title="Skip / day-off">
             Marks a day streak-neutral: no penalty, no streak impact. Only for flexible tasks that can still hit quota on remaining days.
+          </Block>
+        </div>
+      </section>
+
+      {/* Legacy — the unbounded half */}
+      <section>
+        <SectionTitle icon={<InfinityIcon className="h-3.5 w-3.5" />}>Legacy</SectionTitle>
+        <div className="space-y-4 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="flex items-baseline gap-2">
+              <span className="font-display text-3xl font-bold neon-text">{legacy.rank.label}</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                rank
+              </span>
+            </div>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {legacy.xp.toLocaleString('en-IN')} / {legacy.rank.next.toLocaleString('en-IN')} legacy XP
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-secondary/70">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-500"
+              style={{ width: `${Math.round(legacy.rank.progress * 100)}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Earned ever" value={`₹${legacy.earned.toLocaleString('en-IN')}`} />
+            <Stat label="Completions" value={legacy.completions.toLocaleString('en-IN')} />
+            <Stat label="Active days" value={legacy.activeDays.toLocaleString('en-IN')} />
+            <Stat label="Longest run" value={`${legacy.longestActiveRun}d`} />
+          </div>
+
+          <Block title="Why this exists">
+            The wallet has a ceiling because it gates real spending. Legacy has none. It counts only
+            what you have already done, is never spent, never decays, and no failure reduces it —
+            penalties cost you level, never legacy. Ranks run{' '}
+            <span className="text-primary font-semibold">E → D → C → B → A → S</span>, then S★1, S★2,
+            and onward with no end. Each rank costs 40% more than the last.
           </Block>
         </div>
       </section>
@@ -293,4 +349,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function B({ children }: { children: React.ReactNode }) {
   return <span className="font-semibold text-primary">{children}</span>;
+}
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border/50 bg-background/40 p-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="font-display text-lg font-bold tabular-nums leading-tight">{value}</div>
+    </div>
+  );
 }
