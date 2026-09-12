@@ -10,6 +10,22 @@ import {
   TraitId, TRAITS, isTraitId, baseXpForEffort, baseXpForCompletion,
 } from '@/lib/xpUtils';
 
+/**
+ * Postgres TIME columns round-trip as "HH:MM:SS", but every scheduled-time
+ * consumer in this app -- TimePicker's own parsing, the native reminder
+ * scheduler, subtask sort order -- validates against a strict "HH:MM" shape
+ * with no seconds. A trailing ":00" silently failed that check everywhere at
+ * once: the value was genuinely saved, but every read of it looked invalid,
+ * so the picker showed its empty-state placeholder for a task that had a
+ * real time all along. Stripped once here, at the one boundary where a raw
+ * Postgres string enters the app, so nothing downstream needs to know
+ * Postgres appends seconds.
+ */
+function normalizeTime(v: string | null | undefined): string | null {
+  if (!v) return null;
+  return v.slice(0, 5);
+}
+
 function normalizeTraits(...sources: unknown[]): TraitId[] {
   for (const s of sources) {
     if (Array.isArray(s)) {
@@ -316,7 +332,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           effortWeight: (t.effort_weight ?? t.difficulty) as Task['effortWeight'],
           createdAt: t.created_at || new Date().toISOString(),
           startDate: t.start_date || format(new Date(), 'yyyy-MM-dd'),
-          scheduledTime: t.scheduled_time || null,
+          scheduledTime: normalizeTime(t.scheduled_time),
           currentStreak: t.current_streak || 0,
           streaksCompleted: t.streaks_completed || 0,
           streakBrokenThisWeek: false,
@@ -340,7 +356,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               taskId: s.task_id,
               name: s.name,
               isCompleted: s.is_completed,
-              scheduledTime: s.scheduled_time || '',
+              scheduledTime: normalizeTime(s.scheduled_time) || '',
             })),
         }));
 
@@ -629,7 +645,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             taskId: s.task_id,
             name: s.name,
             isCompleted: s.is_completed,
-            scheduledTime: s.scheduled_time || '',
+            scheduledTime: normalizeTime(s.scheduled_time) || '',
           }));
         }
       }
@@ -644,7 +660,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         effortWeight: ((data as any).effort_weight ?? data.difficulty) as Task['effortWeight'],
         createdAt: data.created_at || new Date().toISOString(),
         startDate: (data as any).start_date || format(new Date(), 'yyyy-MM-dd'),
-        scheduledTime: (data as any).scheduled_time || null,
+        scheduledTime: normalizeTime((data as any).scheduled_time),
         currentStreak: 0,
         streaksCompleted: 0,
         streakBrokenThisWeek: false,
