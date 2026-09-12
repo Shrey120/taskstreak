@@ -14,7 +14,7 @@ export interface Task {
   id: string;
   name: string;
   frequencyType: FrequencyType;
-  frequencyValue: number[] | string | DayOfWeek | number | EveryNWeeksValue; // days of week (0-6), day of month (1-31), date string, day name, minimum count, or every-N-weeks config
+  frequencyValue: number[] | string | DayOfWeek | number | EveryNWeeksValue | AtLeastValue; // days of week (0-6), day of month (1-31), date string, day name, minimum count (legacy) or {quota, excludedDays}, or every-N-weeks config
   amount: number;
   baseAmount: number;
   /** Money growth: the multiplier applied when a streak cycle closes. */
@@ -47,6 +47,20 @@ export interface TaskCompletion {
    * this was stored.
    */
   penaltyAmount?: number;
+}
+
+/**
+ * `frequencyValue` shape for `at-least-weekly` / `at-least-monthly`.
+ *
+ * `excludedDays` (JS getDay(): 0 = Sunday) are days this task is never
+ * expected on at all -- they don't count toward the period's available pool,
+ * so "5 days/week excluding Sunday" means 5 of the 6 remaining days, not 5
+ * of 7. A plain number is still accepted as legacy shorthand for a quota
+ * with no exclusions; see getAtLeastConfig in lib/schedule.ts.
+ */
+export interface AtLeastValue {
+  quota: number;
+  excludedDays?: number[];
 }
 
 export interface Subtask {

@@ -208,7 +208,12 @@ export function CodexView() {
           <Block title="At least N per week / month">
             A quota, not fixed days. Do it on any days you like; once the quota is met the task{' '}
             <span className="text-primary font-semibold">disappears for the rest of that period</span>{' '}
-            instead of nagging. Only missing a whole period's quota breaks the streak.
+            instead of nagging. Only missing a whole period's quota breaks the streak. Optionally
+            exclude specific days — "5 days a week, excluding Sunday" means 5 of the{' '}
+            <span className="text-primary font-semibold">6 remaining</span> days, not 5 of 7. An
+            excluded day never shows up, never counts toward the quota, and never counts against
+            it either — the picker won't let the quota sit above what the remaining days can
+            actually reach.
           </Block>
           <Block title="One-time date">
             A single calendar date. Due once, never again, and it has no streak cycle.

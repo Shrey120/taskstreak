@@ -13,7 +13,7 @@ import { TimePicker } from './TimePicker';
 import { cn } from '@/lib/utils';
 import { DayPresetChips } from './DayPresetChips';
 import { WeeklyLoadPreview } from './WeeklyLoadPreview';
-import { isEveryNWeeksValue } from '@/lib/schedule';
+import { isEveryNWeeksValue, getAtLeastConfig, availableDaysInMonth } from '@/lib/schedule';
 import { toKey, weekStartKey } from '@/lib/periodUtils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -32,6 +32,8 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
   const [specificDay, setSpecificDay] = useState<DayOfWeek>('monday');
   const [minDaysWeek, setMinDaysWeek] = useState('3');
   const [minDaysMonth, setMinDaysMonth] = useState('10');
+  const [excludedDaysWeek, setExcludedDaysWeek] = useState<number[]>([]);
+  const [excludedDaysMonth, setExcludedDaysMonth] = useState<number[]>([]);
   const [amount, setAmount] = useState('');
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [effortWeight, setEffortWeight] = useState<1 | 2 | 3 | 4 | 5>(3);
@@ -78,9 +80,13 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       } else if (task.frequencyType === 'specific-day') {
         setSpecificDay(task.frequencyValue as DayOfWeek);
       } else if (task.frequencyType === 'at-least-weekly') {
-        setMinDaysWeek((task.frequencyValue as number).toString());
+        const cfg = getAtLeastConfig(task.frequencyValue);
+        setMinDaysWeek(cfg.quota.toString());
+        setExcludedDaysWeek(cfg.excludedDays);
       } else if (task.frequencyType === 'at-least-monthly') {
-        setMinDaysMonth((task.frequencyValue as number).toString());
+        const cfg = getAtLeastConfig(task.frequencyValue);
+        setMinDaysMonth(cfg.quota.toString());
+        setExcludedDaysMonth(cfg.excludedDays);
       }
     }
   }, [task]);
@@ -121,10 +127,10 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
         };
         break;
       case 'at-least-weekly':
-        frequencyValue = parseInt(minDaysWeek) || 3;
+        frequencyValue = { quota: parseInt(minDaysWeek) || 3, excludedDays: excludedDaysWeek };
         break;
       case 'at-least-monthly':
-        frequencyValue = parseInt(minDaysMonth) || 10;
+        frequencyValue = { quota: parseInt(minDaysMonth) || 10, excludedDays: excludedDaysMonth };
         break;
       default:
         frequencyValue = task.frequencyValue;
@@ -165,6 +171,31 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
   };
+
+  const toggleExcludedWeek = (day: number) => {
+    setExcludedDaysWeek((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  };
+  const toggleExcludedMonth = (day: number) => {
+    setExcludedDaysMonth((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  };
+
+  // Excluding a day shrinks the available pool, so the quota can never sit
+  // above what's now achievable. Hooks have to stay before the `if (!task)
+  // return null` below, since hook order can't change between renders.
+  const maxWeekQuota = Math.max(1, 7 - excludedDaysWeek.length);
+  useEffect(() => {
+    if ((parseInt(minDaysWeek, 10) || 0) > maxWeekQuota) setMinDaysWeek(String(maxWeekQuota));
+  }, [maxWeekQuota]);
+
+  const editNow = new Date();
+  const maxMonthQuota = Math.max(1, availableDaysInMonth(excludedDaysMonth, editNow.getFullYear(), editNow.getMonth()));
+  useEffect(() => {
+    if ((parseInt(minDaysMonth, 10) || 0) > maxMonthQuota) setMinDaysMonth(String(maxMonthQuota));
+  }, [maxMonthQuota]);
 
   const weekDays = [
     { value: 0, label: 'Sun' },
@@ -272,11 +303,35 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                  {Array.from({ length: maxWeekQuota }, (_, i) => i + 1).map((n) => (
                     <SelectItem key={n} value={n.toString()}>At least {n} day{n > 1 ? 's' : ''} per week</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+
+              <Label className="text-sm font-semibold pt-2 block">Never expected on (optional)</Label>
+              <div className="flex gap-2 flex-wrap">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => toggleExcludedWeek(day.value)}
+                    className={cn(
+                      'w-12 h-10 rounded-lg text-sm font-medium transition-all',
+                      excludedDaysWeek.includes(day.value)
+                        ? 'bg-destructive/80 text-destructive-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {excludedDaysWeek.length > 0
+                  ? `Excluded days never count toward the quota or the week's available pool -- ${maxWeekQuota} day${maxWeekQuota > 1 ? 's' : ''} left to pick from.`
+                  : `Days that are always off the hook, e.g. Sunday for a "5 days a week" task.`}
+              </p>
             </div>
           )}
 
@@ -288,11 +343,38 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[5, 10, 15, 20, 25, 30].map((n) => (
+                  {[5, 10, 15, 20, 25, 30].filter((n) => n <= maxMonthQuota).map((n) => (
                     <SelectItem key={n} value={n.toString()}>At least {n} days per month</SelectItem>
                   ))}
+                  {![5, 10, 15, 20, 25, 30].includes(maxMonthQuota) && (
+                    <SelectItem value={maxMonthQuota.toString()}>At least {maxMonthQuota} days per month (max)</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+
+              <Label className="text-sm font-semibold pt-2 block">Never expected on (optional)</Label>
+              <div className="flex gap-2 flex-wrap">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => toggleExcludedMonth(day.value)}
+                    className={cn(
+                      'w-12 h-10 rounded-lg text-sm font-medium transition-all',
+                      excludedDaysMonth.includes(day.value)
+                        ? 'bg-destructive/80 text-destructive-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {excludedDaysMonth.length > 0
+                  ? `Excluded weekdays never count toward the quota -- roughly ${maxMonthQuota} days left to pick from this month.`
+                  : 'Days that are always off the hook, e.g. Sunday.'}
+              </p>
             </div>
           )}
 

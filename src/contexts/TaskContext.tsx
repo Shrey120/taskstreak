@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
 import { getStreakCycleLength, computeCurrentStreak, computeAtLeastRawStreak } from '@/lib/streakUtils';
 import { periodUnitFor, successesInPeriod } from '@/lib/periodUtils';
-import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange } from '@/lib/schedule';
+import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange, getAtLeastConfig } from '@/lib/schedule';
 import {
   TraitId, TRAITS, isTraitId, baseXpForEffort, baseXpForCompletion,
 } from '@/lib/xpUtils';
@@ -1237,8 +1237,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     // A flexible task that has already met its quota for the period drops off
     // the list for the rest of that period rather than nagging every day.
     if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') {
+      const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
+      // An excluded day was never expected at all -- it shouldn't show up
+      // asking to be done just because the quota isn't met yet.
+      if (excludedDays.includes(date.getDay())) return false;
       const unit = periodUnitFor(task)!;
-      return successesInPeriod(task, dateStr, unit) < Math.max(1, task.frequencyValue as number);
+      return successesInPeriod(task, dateStr, unit) < quota;
     }
     return isTaskDueOn(task, date);
   };

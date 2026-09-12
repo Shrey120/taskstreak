@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import { Task } from '@/types/task';
+import { getAtLeastConfig } from '@/lib/schedule';
 
 /**
  * Period math for "at-least N per week/month" tasks.
@@ -62,11 +63,26 @@ export function successesInPeriod(task: Task, key: string, unit: 'week' | 'month
   ).length;
 }
 
-/** How many days are left in the period, counting `key` itself. */
-export function daysLeftInPeriod(key: string, unit: 'week' | 'month'): number {
+/**
+ * How many AVAILABLE days are left in the period, counting `key` itself.
+ * A day matching one of `excludedDays` (JS getDay()) was never available at
+ * all, so it doesn't count toward "days left to still hit the quota" --
+ * without this, excluding Sunday from a 5/week task would make the picker
+ * think a 6-day week still has 7 days to work with.
+ */
+export function daysLeftInPeriod(key: string, unit: 'week' | 'month', excludedDays: number[] = []): number {
   const [, end] = periodRange(key, unit);
-  const ms = fromKey(end).getTime() - fromKey(key).getTime();
-  return Math.round(ms / 86_400_000) + 1;
+  if (excludedDays.length === 0) {
+    const ms = fromKey(end).getTime() - fromKey(key).getTime();
+    return Math.round(ms / 86_400_000) + 1;
+  }
+  let count = 0;
+  const cursor = fromKey(key);
+  for (let i = 0; i < 400 && toKey(cursor) <= end; i++) {
+    if (!excludedDays.includes(cursor.getDay())) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
 }
 
 /**
@@ -80,9 +96,9 @@ export function canAffordDayOff(task: Task, date: Date): boolean {
   const unit = periodUnitFor(task);
   if (!unit) return false;
   const key = toKey(date);
-  const quota = Math.max(1, task.frequencyValue as number);
+  const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
   const remainingRequired = Math.max(0, quota - successesInPeriod(task, key, unit));
-  return daysLeftInPeriod(key, unit) - 1 >= remainingRequired;
+  return daysLeftInPeriod(key, unit, excludedDays) - 1 >= remainingRequired;
 }
 
 /** Whether the flexible task has already met its quota for `date`'s period. */
@@ -90,7 +106,8 @@ export function quotaMet(task: Task, date: Date): boolean {
   const unit = periodUnitFor(task);
   if (!unit) return false;
   const key = toKey(date);
-  return successesInPeriod(task, key, unit) >= Math.max(1, task.frequencyValue as number);
+  const { quota } = getAtLeastConfig(task.frequencyValue);
+  return successesInPeriod(task, key, unit) >= quota;
 }
 
 /**

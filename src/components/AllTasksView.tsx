@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTasks } from '@/contexts/TaskContext';
-import { Task, DIFFICULTY_MULTIPLIERS } from '@/types/task';
+import { Task, DIFFICULTY_MULTIPLIERS, DAY_LABELS, DAYS_OF_WEEK } from '@/types/task';
 import { Button } from '@/components/ui/button';
 import { Trash2, Flame, TrendingUp, Zap, Award, Pencil, Clock, DollarSign, BarChart3, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown, TrendingDown, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -8,7 +8,7 @@ import { EditTaskDialog } from './EditTaskDialog';
 import { ConfirmDeleteTask } from './ConfirmDeleteTask';
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual } from 'date-fns';
 import { getStreakCycleLength } from '@/lib/streakUtils';
-import { isEveryNWeeksValue, isTaskDueOn, isPausedOn } from '@/lib/schedule';
+import { isEveryNWeeksValue, isTaskDueOn, isPausedOn, getAtLeastConfig } from '@/lib/schedule';
 import {
   Dialog,
   DialogContent,
@@ -51,9 +51,14 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
           : `${v.days.length} days, every ${v.interval} weeks`;
       }
       case 'at-least-weekly':
-        return `At least ${task.frequencyValue} days/week`;
-      case 'at-least-monthly':
-        return `At least ${task.frequencyValue} days/month`;
+      case 'at-least-monthly': {
+        const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
+        const per = task.frequencyType === 'at-least-weekly' ? 'week' : 'month';
+        const excl = excludedDays.length
+          ? ` (excl. ${excludedDays.map((d) => DAY_LABELS[DAYS_OF_WEEK[(d + 6) % 7]]).join(', ')})`
+          : '';
+        return `At least ${quota} days/${per}${excl}`;
+      }
       case 'specific-day':
         return `Every ${task.frequencyValue}`;
       case 'specific-date':

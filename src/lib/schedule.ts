@@ -1,4 +1,4 @@
-import { Task, FrequencyType } from '@/types/task';
+import { Task, FrequencyType, AtLeastValue } from '@/types/task';
 import { fromKey, toKey, weekStartKey, isMonthDayDue } from '@/lib/periodUtils';
 
 /**
@@ -25,6 +25,42 @@ export function isEveryNWeeksValue(v: unknown): v is EveryNWeeksValue {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const o = v as Record<string, unknown>;
   return typeof o.interval === 'number' && Array.isArray(o.days) && typeof o.anchor === 'string';
+}
+
+export function isAtLeastValue(v: unknown): v is AtLeastValue {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  return typeof (v as Record<string, unknown>).quota === 'number';
+}
+
+/**
+ * Normalizes an at-least-* task's frequencyValue, whether it's the legacy
+ * plain number (quota, no exclusions) or the newer {quota, excludedDays}
+ * object -- the one place both shapes get read, so every quota/exclusion
+ * consumer (streak, XP ceiling, period math, the picker itself) agrees.
+ */
+/**
+ * How many days of `year`-`month0` (0-based) do NOT fall on one of
+ * `excludedDays` (JS getDay()). Used to cap an at-least-monthly quota
+ * against a concrete month rather than a vague "usually ~30".
+ */
+export function availableDaysInMonth(excludedDays: number[], year: number, month0: number): number {
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  if (excludedDays.length === 0) return daysInMonth;
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (!excludedDays.includes(new Date(year, month0, day).getDay())) count++;
+  }
+  return count;
+}
+
+export function getAtLeastConfig(frequencyValue: unknown): { quota: number; excludedDays: number[] } {
+  if (isAtLeastValue(frequencyValue)) {
+    return {
+      quota: Math.max(1, frequencyValue.quota),
+      excludedDays: Array.isArray(frequencyValue.excludedDays) ? frequencyValue.excludedDays : [],
+    };
+  }
+  return { quota: Math.max(1, (frequencyValue as number) || 1), excludedDays: [] };
 }
 
 /** Whole weeks between two week-start keys. Always >= 0 via abs. */
@@ -91,8 +127,10 @@ export function isTaskDueOn(task: Task, date: Date): boolean {
       return (norm.frequencyValue as number[]).includes(date.getDay());
     }
     case 'at-least-weekly':
-    case 'at-least-monthly':
-      return true;
+    case 'at-least-monthly': {
+      const cfg = getAtLeastConfig(task.frequencyValue);
+      return !cfg.excludedDays.includes(date.getDay());
+    }
     default:
       return false;
   }

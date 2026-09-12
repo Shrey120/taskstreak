@@ -3,6 +3,7 @@ import { Task, DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { TraitId, TRAITS, baseXpForEffort } from '@/lib/xpUtils';
 import { getStreakCycleLength } from '@/lib/streakUtils';
 import { isMonthDayDue } from '@/lib/periodUtils';
+import { getAtLeastConfig } from '@/lib/schedule';
 
 /**
  * Estimate the maximum ADDITIONAL XP each trait can still gain between `from`
@@ -134,12 +135,17 @@ export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxW
     let completionDays = 0;
 
     if (task.frequencyType === 'at-least-weekly') {
-      const quota = task.frequencyValue as number;
+      const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
       const already = countSuccessesThisWeek(task, weekStart, sunday);
       const remainingQuota = Math.max(0, quota - already);
-      completionDays = Math.min(remainingQuota, remainingDates.length);
+      // An excluded day was never going to pay out, so it can't count toward
+      // how many more times this task could realistically complete this week.
+      const availableDays = excludedDays.length
+        ? remainingDates.filter((d) => !excludedDays.includes(d.getDay())).length
+        : remainingDates.length;
+      completionDays = Math.min(remainingQuota, availableDays);
     } else if (task.frequencyType === 'at-least-monthly') {
-      const quota = task.frequencyValue as number;
+      const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
       const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
       const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
       const alreadyMonth = task.completions.filter((c) => {
@@ -148,7 +154,10 @@ export function computeMaxWeeklyXp(tasks: Task[], from: Date = new Date()): MaxW
         return cd >= monthStart && cd <= monthEnd;
       }).length;
       const remainingQuota = Math.max(0, quota - alreadyMonth);
-      completionDays = Math.min(remainingQuota, remainingDates.length);
+      const availableDays = excludedDays.length
+        ? remainingDates.filter((d) => !excludedDays.includes(d.getDay())).length
+        : remainingDates.length;
+      completionDays = Math.min(remainingQuota, availableDays);
     } else {
       for (const d of remainingDates) {
         if (!dueOnDate(task, d)) continue;

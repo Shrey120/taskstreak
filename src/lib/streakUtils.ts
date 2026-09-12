@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { Task } from '@/types/task';
-import { isTaskDueOn } from '@/lib/schedule';
+import { isTaskDueOn, getAtLeastConfig } from '@/lib/schedule';
 
 /**
  * How many consecutive successful completions make up one full "streak cycle"
@@ -90,7 +90,7 @@ export function computeAtLeastRawStreak(
   anchorDateStr: string,
   unit: 'week' | 'month',
 ): number {
-  const quota = Math.max(1, task.frequencyValue as number);
+  const { quota } = getAtLeastConfig(task.frequencyValue);
   const getKey = unit === 'week' ? getWeekKey : getMonthKey;
   const prevKey = unit === 'week' ? prevWeekKey : prevMonthKey;
 
