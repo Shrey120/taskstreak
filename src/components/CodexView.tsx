@@ -137,6 +137,11 @@ export function CodexView() {
             raise does not land. One task can never run away from the others — the growth has no
             ceiling, but it has to be earned broadly to keep compounding.
           </Block>
+          <Block title="Undo">
+            Undoing a failure returns <B>exactly</B> what it took — the amount charged at the
+            time, not the task's amount today, and the XP is handed back too. Legacy is untouched
+            either way: it only ever counts positive XP.
+          </Block>
           <Block title="Failure (✗)">
             Deducts the task's current amount from your wallet
             (count task: <span className="text-destructive font-semibold">200 × rate</span>). The wallet can go negative.

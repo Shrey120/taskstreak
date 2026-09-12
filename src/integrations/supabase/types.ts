@@ -209,6 +209,7 @@ export type Database = {
           created_at: string | null
           device_id: string
           id: string
+          penalty_amount: number | null
           streak_bonus: boolean | null
           task_id: string
         }
@@ -218,12 +219,14 @@ export type Database = {
           created_at?: string | null
           device_id: string
           id?: string
+          penalty_amount?: number | null
           streak_bonus?: boolean | null
           task_id: string
         }
         Update: {
           amount_earned?: number
           completed_date?: string
+          penalty_amount?: number | null
           created_at?: string | null
           device_id?: string
           id?: string

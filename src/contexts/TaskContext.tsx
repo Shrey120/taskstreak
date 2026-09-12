@@ -22,7 +22,7 @@ function normalizeTraits(...sources: unknown[]): TraitId[] {
   return ['discipline'];
 }
 
-export type XpReason = 'completion' | 'streak_bonus' | 'mastery_bonus' | 'failure_penalty';
+export type XpReason = 'completion' | 'streak_bonus' | 'mastery_bonus' | 'failure_penalty' | 'penalty_reversal';
 
 export interface XpEvent {
   id: string;
@@ -323,6 +323,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               date: c.completed_date,
               earnedAmount: Number(c.amount_earned),
               wasStreakBonus: c.streak_bonus || false,
+              penaltyAmount: c.penalty_amount === null || c.penalty_amount === undefined
+                ? undefined
+                : Number(c.penalty_amount),
             })),
           subtasks: (subtasksData || [])
             .filter((s: any) => s.task_id === t.id)
@@ -423,6 +426,31 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   };
 
   // ---------- XP helpers ----------
+  /**
+   * Put back the XP a failure took off, using the exact per-trait deltas that
+   * were recorded at the time rather than recomputing them.
+   *
+   * Undo refunded the money but never the XP, so failing and undoing left the
+   * traits permanently down — and repeating it drained them for free while the
+   * wallet came back whole every time. Reversal events are themselves logged,
+   * which is also how a second undo is stopped from paying out twice.
+   */
+  const reverseFailureXp = (taskId: string, dateStr: string) => {
+    // Net per trait rather than "has it been reversed before": the same task
+    // can be failed and undone repeatedly on one date, and a plain
+    // already-reversed flag would swallow every reversal after the first.
+    // Summing penalties against reversals leaves exactly what is still owed.
+    const outstanding = new Map<TraitId, number>();
+    for (const e of xpEvents) {
+      if (e.taskId !== taskId || e.date !== dateStr) continue;
+      if (e.reason !== 'failure_penalty' && e.reason !== 'penalty_reversal') continue;
+      outstanding.set(e.trait, (outstanding.get(e.trait) ?? 0) + e.amount);
+    }
+    for (const [trait, net] of outstanding) {
+      if (net < 0) applyXp(trait, taskId, dateStr, -net, 'penalty_reversal');
+    }
+  };
+
   const applyXp = (trait: TraitId, taskId: string | null, date: string, amount: number, reason: XpReason) => {
     if (!deviceId || amount === 0) return;
     // Optimistic UI update
@@ -925,7 +953,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           currentStreak: shouldResetStreak ? 0 : t.currentStreak,
           completions: [
             ...t.completions,
-            { date: dateStr, earnedAmount: 0, wasStreakBonus: false },
+            { date: dateStr, earnedAmount: 0, wasStreakBonus: false, penaltyAmount },
           ],
         };
       })
@@ -939,6 +967,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         completed_date: dateStr,
         amount_earned: 0,
         streak_bonus: false,
+        penalty_amount: penaltyAmount,
       }),
       supabase.from('wallets').update({
         balance: newWalletBalance,
@@ -967,15 +996,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const skippedCompletion = task.completions.find((c) => c.date === dateStr && c.earnedAmount === 0);
     if (!skippedCompletion) return;
 
-    // Refund the penalty
-    let penaltyAmount: number;
-    if (task.isHourly) {
-      penaltyAmount = 200 * task.perMinuteRate;
-    } else {
-      penaltyAmount = task.amount;
-    }
+    // Refund exactly what was charged. Recomputing from the task's amount
+    // TODAY would over-refund whenever a streak raise landed in between --
+    // amounts compound, so that gap can be as large as the difficulty
+    // multiplier. Rows written before penalty_amount existed have no record,
+    // so those fall back to the old behaviour rather than guessing.
+    const penaltyAmount = skippedCompletion.penaltyAmount ?? (
+      task.isHourly ? 200 * task.perMinuteRate : task.amount
+    );
 
     const newWalletBalance = wallet + penaltyAmount;
+    reverseFailureXp(taskId, dateStr);
 
     // Recompute the streak from full history (minus the undone skip), using
     // the same cycle-aware logic as the on-load repair pass.
@@ -1322,6 +1353,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const failure = parentTask.completions.find((c) => c.date === dateStr && c.earnedAmount === 0);
       if (failure) {
         removedFailureCompletion = true;
+        // The all-subtasks-missed path applies a failure_penalty to every
+        // trait; undoing it has to hand that XP back too, or the traits stay
+        // down while the wallet is made whole.
+        reverseFailureXp(parentTask.id, dateStr);
         const remaining = parentTask.completions.filter((c) => !(c.date === dateStr && c.earnedAmount === 0));
         const restoredStreak = computeCurrentStreak(
           parentTask,

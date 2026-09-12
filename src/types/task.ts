@@ -39,6 +39,14 @@ export interface TaskCompletion {
   date: string;
   earnedAmount: number;
   wasStreakBonus: boolean;
+  /**
+   * What the wallet was actually charged when this task was failed. Recorded
+   * so the refund on undo matches the charge exactly, and so the report can
+   * value a past failure at its real cost rather than today's compounded
+   * amount. Undefined for successful completions and for rows written before
+   * this was stored.
+   */
+  penaltyAmount?: number;
 }
 
 export interface Subtask {

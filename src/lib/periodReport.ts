@@ -118,9 +118,14 @@ function measure(
           w.completed++;
           w.byWeekday[mondayIndex]++;
         } else {
-          // A zero-earning completion is a recorded failure, which cost the
-          // task's amount at the time it was taken.
-          w.lost += task.amount;
+          // A zero-earning completion is a recorded failure. Use the amount
+          // actually charged: `task.amount` compounds on every streak cycle,
+          // so reading it today valued an old miss at the raised rate rather
+          // than what it cost. Failures recorded before penalty_amount
+          // existed have no figure, so those fall back to baseAmount -- the
+          // un-raised rate, which understates rather than inventing a
+          // compounded number.
+          w.lost += completion.penaltyAmount ?? task.baseAmount;
         }
       }
       // Flexible tasks have no fixed due days, so they can't be "missed".
