@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
 import { getStreakCycleLength, computeCurrentStreak, computeAtLeastRawStreak } from '@/lib/streakUtils';
 import { periodUnitFor, successesInPeriod } from '@/lib/periodUtils';
+import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange } from '@/lib/schedule';
 import {
   TraitId, TRAITS, isTraitId, baseXpForDifficulty, baseXpForCompletion,
 } from '@/lib/xpUtils';
@@ -41,6 +42,10 @@ interface TaskContextType {
   wallet: number;
   loading: boolean;
   dayOffSet: Set<string>;
+  pauseRanges: PauseRange[];
+  addPause: (start: string, end: string, label?: string) => void;
+  removePause: (id: string) => void;
+  isPausedDate: (date: Date) => boolean;
   traitXp: Record<TraitId, number>;
   xpEvents: XpEvent[];
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'completions' | 'currentStreak' | 'streaksCompleted' | 'streakBrokenThisWeek'>) => Promise<void>;
@@ -74,20 +79,42 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 const EMPTY_TRAIT_XP: Record<TraitId, number> = TRAITS.reduce((m, t) => { m[t.id] = 0; return m; }, {} as Record<TraitId, number>);
 
 /**
- * Read a persisted `taskId|date` key set. Kept as a plain function (not state)
- * so `loadData` can read the *current* stored value: the effects that hydrate
- * dayOffSet / subtaskMissedSet flush in the same commit as the effect that
- * calls loadData, so reading those state variables there would see the empty
- * initial sets and the on-load streak repair would ignore every day off.
+ * Skip days, missed subtasks and pause windows live in Postgres, not in the
+ * browser: the same login is used on phone and laptop, and per-device storage
+ * meant the two silently disagreed about which days were streak-neutral.
+ *
+ * These are plain fetch helpers rather than state so `loadData` can await the
+ * current server values in the same pass that repairs streaks.
  */
-function readKeySet(storageKey: string): Set<string> {
-  if (!storageKey) return new Set();
-  try {
-    const raw = localStorage.getItem(storageKey);
-    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-  } catch {
-    return new Set();
-  }
+async function fetchSkipSet(deviceId: string): Promise<Set<string>> {
+  if (!deviceId) return new Set();
+  const { data, error } = await supabase
+    .from('task_skips')
+    .select('task_id, skip_date')
+    .eq('device_id', deviceId);
+  if (error || !data) return new Set();
+  return new Set(data.map((r) => `${r.task_id}|${r.skip_date}`));
+}
+
+async function fetchMissedSet(deviceId: string): Promise<Set<string>> {
+  if (!deviceId) return new Set();
+  const { data, error } = await supabase
+    .from('subtask_missed')
+    .select('subtask_id, missed_date')
+    .eq('device_id', deviceId);
+  if (error || !data) return new Set();
+  return new Set(data.map((r) => `${r.subtask_id}|${r.missed_date}`));
+}
+
+async function fetchPauseRanges(deviceId: string): Promise<PauseRange[]> {
+  if (!deviceId) return [];
+  const { data, error } = await supabase
+    .from('pause_ranges')
+    .select('id, start_date, end_date, label')
+    .eq('device_id', deviceId)
+    .order('start_date', { ascending: true });
+  if (error || !data) return [];
+  return data.map((r) => ({ id: r.id, start: r.start_date, end: r.end_date, label: r.label ?? undefined }));
 }
 
 export function TaskProvider({ children }: { children: ReactNode }) {
@@ -101,6 +128,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Per-date "subtask missed" set. Key: `${subtaskId}|${yyyy-MM-dd}`.
   // Streak-neutral, no penalty — the subtask just can't be completed that day.
   const [subtaskMissedSet, setSubtaskMissedSet] = useState<Set<string>>(new Set());
+  // Vacation / pause windows. Every task is off the hook inside these, so a
+  // paused day neither breaks a streak nor demands a completion.
+  const [pauseRanges, setPauseRanges] = useState<PauseRange[]>([]);
   // XP totals per trait + audit event log
   const [traitXp, setTraitXp] = useState<Record<TraitId, number>>({ ...EMPTY_TRAIT_XP });
   const [xpEvents, setXpEvents] = useState<XpEvent[]>([]);
@@ -109,45 +139,88 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const deviceId = user?.device_id || '';
 
-  const dayOffStorageKey = deviceId ? `dayoff:${deviceId}` : '';
-  const missedStorageKey = deviceId ? `submissed:${deviceId}` : '';
-
-  useEffect(() => {
-    setDayOffSet(readKeySet(dayOffStorageKey));
-  }, [dayOffStorageKey]);
-
-  useEffect(() => {
-    setSubtaskMissedSet(readKeySet(missedStorageKey));
-  }, [missedStorageKey]);
-
-  const persistDayOff = (next: Set<string>) => {
-    if (!dayOffStorageKey) return;
-    try { localStorage.setItem(dayOffStorageKey, JSON.stringify(Array.from(next))); } catch {}
+  const addPause = async (start: string, end: string, label?: string) => {
+    if (!deviceId) return;
+    const range = start <= end ? { start, end } : { start: end, end: start };
+    const { data, error } = await supabase
+      .from('pause_ranges')
+      .insert({ device_id: deviceId, start_date: range.start, end_date: range.end, label: label || null })
+      .select('id, start_date, end_date, label')
+      .single();
+    if (error || !data) return;
+    setPauseRanges((prev) =>
+      [...prev, { id: data.id, start: data.start_date, end: data.end_date, label: data.label ?? undefined }]
+        .sort((a, b) => a.start.localeCompare(b.start)),
+    );
   };
-  const persistMissed = (next: Set<string>) => {
-    if (!missedStorageKey) return;
-    try { localStorage.setItem(missedStorageKey, JSON.stringify(Array.from(next))); } catch {}
+
+  const removePause = async (id: string) => {
+    setPauseRanges((prev) => prev.filter((r) => r.id !== id));
+    await supabase.from('pause_ranges').delete().eq('id', id);
   };
+
+  const isPausedDate = (date: Date) => isPausedOn(pauseRanges, format(date, 'yyyy-MM-dd'));
+
+  /**
+   * Every date that is streak-neutral for `task`: explicit days off, dates
+   * where a subtask was marked missed, and any day inside a vacation window.
+   *
+   * A date only counts as neutral if the task was NOT completed for money on
+   * it — otherwise a skip taken before a later completion would erase the
+   * completion from the run. Every recompute path must go through here; three
+   * of them previously omitted exclusions entirely, so a streak silently
+   * changed value depending on whether it was recomputed on load, on
+   * completion, or on undo.
+   */
+  const excludedDatesFor = (task: Task, completions?: { date: string; earnedAmount: number }[]): Set<string> => {
+    const source = completions ?? task.completions;
+    const earned = new Set(source.filter((c) => c.earnedAmount > 0).map((c) => c.date));
+    const out = new Set<string>();
+    const addIfNeutral = (d: string) => { if (!earned.has(d)) out.add(d); };
+
+    for (const key of dayOffSet) {
+      const [tid, d] = key.split('|');
+      if (tid === task.id) addIfNeutral(d);
+    }
+    const subtaskIds = new Set(task.subtasks.map((st) => st.id));
+    for (const key of subtaskMissedSet) {
+      const [sid, d] = key.split('|');
+      if (subtaskIds.has(sid)) addIfNeutral(d);
+    }
+    if (pauseRanges.length > 0) {
+      const dates = source.map((c) => c.date).concat(task.startDate);
+      const from = dates.reduce((a, b) => (a < b ? a : b), task.startDate);
+      for (const d of pausedDatesIn(pauseRanges, from, format(new Date(), 'yyyy-MM-dd'))) addIfNeutral(d);
+    }
+    return out;
+  };
+
 
   const dayOffKey = (taskId: string, date: Date) => `${taskId}|${format(date, 'yyyy-MM-dd')}`;
 
   const isDayOff = (taskId: string, date: Date): boolean =>
     dayOffSet.has(dayOffKey(taskId, date));
 
+  // Optimistic locally, durable on the server, so the other device sees it.
   const skipDay = (taskId: string, date: Date) => {
-    const key = dayOffKey(taskId, date);
-    const next = new Set(dayOffSet);
-    next.add(key);
-    setDayOffSet(next);
-    persistDayOff(next);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    setDayOffSet((prev) => new Set(prev).add(`${taskId}|${dateStr}`));
+    if (!deviceId) return;
+    supabase
+      .from('task_skips')
+      .upsert({ device_id: deviceId, task_id: taskId, skip_date: dateStr }, { onConflict: 'task_id,skip_date' })
+      .then(({ error }) => { if (error) console.error('skipDay:', error); });
   };
 
   const undoSkipDay = (taskId: string, date: Date) => {
-    const key = dayOffKey(taskId, date);
-    const next = new Set(dayOffSet);
-    next.delete(key);
-    setDayOffSet(next);
-    persistDayOff(next);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    setDayOffSet((prev) => { const n = new Set(prev); n.delete(`${taskId}|${dateStr}`); return n; });
+    supabase
+      .from('task_skips')
+      .delete()
+      .eq('task_id', taskId)
+      .eq('skip_date', dateStr)
+      .then(({ error }) => { if (error) console.error('undoSkipDay:', error); });
   };
 
 
@@ -223,8 +296,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         const tasksWithCompletions: Task[] = tasksData.map((t: any) => ({
           id: t.id,
           name: t.name,
-          frequencyType: t.frequency_type as Task['frequencyType'],
-          frequencyValue: t.frequency_value as Task['frequencyValue'],
+          // Legacy `specific-day` rows are folded into `weekly` on read.
+          ...normalizeFrequency(t.frequency_type as Task['frequencyType'], t.frequency_value),
           amount: Number(t.amount),
           baseAmount: Number(t.base_amount) || Number(t.amount),
           difficulty: t.difficulty as Task['difficulty'],
@@ -261,12 +334,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         // Build per-task excluded-date sets (day-off + any-subtask-missed dates
         // where the task wasn't fully completed) so streak recalc treats them
         // as streak-neutral.
-        // Read straight from storage — see readKeySet: the hydrating effects
-        // have not committed by the time this runs.
-        const storedDayOff = readKeySet(dayOffStorageKey);
-        const storedMissed = readKeySet(missedStorageKey);
+        // Fetched rather than read from state: the hydrating effects have not
+        // committed by the time this runs, so state would still be empty here
+        // and the on-load streak repair would ignore every skip.
+        const [storedDayOff, storedMissed, storedPauses] = await Promise.all([
+          fetchSkipSet(deviceId),
+          fetchMissedSet(deviceId),
+          fetchPauseRanges(deviceId),
+        ]);
+        setDayOffSet(storedDayOff);
+        setSubtaskMissedSet(storedMissed);
+        setPauseRanges(storedPauses);
 
         const excludedByTask = new Map<string, Set<string>>();
+        const pausedDays = storedPauses.length
+          ? pausedDatesIn(storedPauses, '0000-01-01', todayStr)
+          : new Set<string>();
         for (const key of storedDayOff) {
           const [tid, d] = key.split('|');
           if (!excludedByTask.has(tid)) excludedByTask.set(tid, new Set());
@@ -288,6 +371,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           const successDates = new Set(task.completions.filter((c) => c.earnedAmount > 0).map((c) => c.date));
           const cleanExcluded = new Set<string>();
           for (const d of excluded) if (!successDates.has(d)) cleanExcluded.add(d);
+          for (const d of pausedDays) if (!successDates.has(d)) cleanExcluded.add(d);
           const correctStreak = computeCurrentStreak(task, task.completions, todayStr, cleanExcluded);
           if (correctStreak !== task.currentStreak) {
             console.log(`Fixing streak for "${task.name}": ${task.currentStreak} → ${correctStreak}`);
@@ -407,29 +491,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const dateKey = (d: Date) => format(d, 'yyyy-MM-dd');
 
+  /** Due by the task's own schedule, and not inside a vacation window. */
   const isTaskDueOnDate = (task: Task, date: Date) => {
-    const dateStr = dateKey(date);
-    if (task.startDate > dateStr) return false;
-
-    const dayOfWeek = date.getDay();
-    const dayOfMonth = date.getDate();
-    const dayName = format(date, 'EEEE').toLowerCase();
-
-    switch (task.frequencyType) {
-      case 'weekly':
-        return (task.frequencyValue as number[]).includes(dayOfWeek);
-      case 'monthly':
-        return (task.frequencyValue as number[]).includes(dayOfMonth);
-      case 'specific-date':
-        return task.frequencyValue === dateStr;
-      case 'specific-day':
-        return task.frequencyValue === dayName;
-      case 'at-least-weekly':
-      case 'at-least-monthly':
-        return true;
-      default:
-        return false;
-    }
+    if (isPausedOn(pauseRanges, dateKey(date))) return false;
+    return isTaskDueOn(task, date);
   };
 
   const findPreviousDueDate = (task: Task, date: Date): string | null => {
@@ -505,8 +570,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const newTask: Task = {
         id: data.id,
         name: data.name,
-        frequencyType: data.frequency_type as Task['frequencyType'],
-        frequencyValue: data.frequency_value as Task['frequencyValue'],
+        ...normalizeFrequency(data.frequency_type as Task['frequencyType'], data.frequency_value),
         amount: Number(data.amount),
         baseAmount: Number((data as any).base_amount) || Number(data.amount),
         difficulty: data.difficulty as Task['difficulty'],
@@ -687,6 +751,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       { ...task, completions: remainingCompletions } as Task,
       remainingCompletions,
       todayStr,
+      excludedDatesFor(task, remainingCompletions),
     );
 
     const newWalletBalance = wallet - completion.earnedAmount;
@@ -875,7 +940,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const completionsWithoutSkip = task.completions.filter(
       (c) => !(c.date === dateStr && c.earnedAmount === 0)
     );
-    const restoredStreak = computeCurrentStreak(task, completionsWithoutSkip, format(new Date(), 'yyyy-MM-dd'));
+    const restoredStreak = computeCurrentStreak(
+      task,
+      completionsWithoutSkip,
+      format(new Date(), 'yyyy-MM-dd'),
+      excludedDatesFor(task, completionsWithoutSkip),
+    );
 
     // Optimistic UI update
     setWallet(newWalletBalance);
@@ -973,23 +1043,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
    * has not been met yet.
    */
   const isScheduledOn = (task: Task, date: Date, dateStr: string): boolean => {
-    switch (task.frequencyType) {
-      case 'weekly':
-        return (task.frequencyValue as number[]).includes(date.getDay());
-      case 'monthly':
-        return (task.frequencyValue as number[]).includes(date.getDate());
-      case 'specific-date':
-        return task.frequencyValue === dateStr;
-      case 'specific-day':
-        return task.frequencyValue === format(date, 'EEEE').toLowerCase();
-      case 'at-least-weekly':
-      case 'at-least-monthly': {
-        const unit = periodUnitFor(task)!;
-        return successesInPeriod(task, dateStr, unit) < (task.frequencyValue as number);
-      }
-      default:
-        return false;
+    // Paused days show nothing and demand nothing.
+    if (isPausedOn(pauseRanges, dateStr)) return false;
+    // A flexible task that has already met its quota for the period drops off
+    // the list for the rest of that period rather than nagging every day.
+    if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') {
+      const unit = periodUnitFor(task)!;
+      return successesInPeriod(task, dateStr, unit) < Math.max(1, task.frequencyValue as number);
     }
+    return isTaskDueOn(task, date);
   };
 
   const getTasksForDate = (date: Date): Task[] => {
@@ -1113,7 +1175,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const next = new Set(subtaskMissedSet);
     next.add(k);
     setSubtaskMissedSet(next);
-    persistMissed(next);
+    if (deviceId) {
+      supabase
+        .from('subtask_missed')
+        .upsert(
+          { device_id: deviceId, task_id: parentTask.id, subtask_id: subtaskId, missed_date: dateStr },
+          { onConflict: 'subtask_id,missed_date' },
+        )
+        .then(({ error }) => { if (error) console.error('markSubtaskMissed:', error); });
+    }
 
     // Deduct this subtask's share from wallet
     const newWallet = wallet - share;
@@ -1190,7 +1260,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const next = new Set(subtaskMissedSet);
     next.delete(k);
     setSubtaskMissedSet(next);
-    persistMissed(next);
+    supabase
+      .from('subtask_missed')
+      .delete()
+      .eq('subtask_id', subtaskId)
+      .eq('missed_date', dateStr)
+      .then(({ error }) => { if (error) console.error('undoSubtaskMissed:', error); });
 
     // Refund the share
     const newWallet = wallet + share;
@@ -1204,7 +1279,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       if (failure) {
         removedFailureCompletion = true;
         const remaining = parentTask.completions.filter((c) => !(c.date === dateStr && c.earnedAmount === 0));
-        const restoredStreak = computeCurrentStreak(parentTask, remaining, format(new Date(), 'yyyy-MM-dd'));
+        const restoredStreak = computeCurrentStreak(
+          parentTask,
+          remaining,
+          format(new Date(), 'yyyy-MM-dd'),
+          excludedDatesFor(parentTask, remaining),
+        );
         setTasks((prev) =>
           prev.map((t) =>
             t.id === parentTask.id
@@ -1372,6 +1452,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         wallet,
         loading,
         dayOffSet,
+        pauseRanges,
+        addPause,
+        removePause,
+        isPausedDate,
         traitXp,
         xpEvents,
 

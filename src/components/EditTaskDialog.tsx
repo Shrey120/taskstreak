@@ -10,6 +10,10 @@ import { TRAITS, TraitId, isTraitId } from '@/lib/xpUtils';
 import { HelpCircle, Clock } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 import { cn } from '@/lib/utils';
+import { DayPresetChips } from './DayPresetChips';
+import { WeeklyLoadPreview } from './WeeklyLoadPreview';
+import { isEveryNWeeksValue } from '@/lib/schedule';
+import { toKey, weekStartKey } from '@/lib/periodUtils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface EditTaskDialogProps {
@@ -30,6 +34,8 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
   const [amount, setAmount] = useState('');
   const [difficulty, setDifficulty] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [scheduledTime, setScheduledTime] = useState('');
+  const [weekInterval, setWeekInterval] = useState('2');
+  const [weekAnchor, setWeekAnchor] = useState<string | null>(null);
   const [traits, setTraits] = useState<TraitId[]>(['discipline']);
 
   useEffect(() => {
@@ -45,6 +51,14 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
         setSelectedDays(task.frequencyValue as number[]);
       } else if (task.frequencyType === 'monthly') {
         setSelectedMonthDays(task.frequencyValue as number[]);
+      } else if (task.frequencyType === 'every-n-weeks') {
+        const v = task.frequencyValue;
+        if (isEveryNWeeksValue(v)) {
+          setWeekInterval(String(v.interval));
+          setSelectedDays(v.days);
+          // Keep the original anchor so editing doesn't shift which weeks are on.
+          setWeekAnchor(v.anchor);
+        }
       } else if (task.frequencyType === 'specific-day') {
         setSpecificDay(task.frequencyValue as DayOfWeek);
       } else if (task.frequencyType === 'at-least-weekly') {
@@ -58,7 +72,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
   const handleSubmit = async () => {
     if (!task || !name.trim() || !amount) return;
 
-    let frequencyValue: number[] | string | DayOfWeek | number;
+    let frequencyValue: Task['frequencyValue'];
     switch (frequencyType) {
       case 'weekly':
         frequencyValue = selectedDays;
@@ -66,8 +80,12 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
       case 'monthly':
         frequencyValue = selectedMonthDays;
         break;
-      case 'specific-day':
-        frequencyValue = specificDay;
+      case 'every-n-weeks':
+        frequencyValue = {
+          interval: Math.max(1, parseInt(weekInterval, 10) || 2),
+          days: selectedDays,
+          anchor: weekAnchor ?? weekStartKey(toKey(new Date())),
+        };
         break;
       case 'at-least-weekly':
         frequencyValue = parseInt(minDaysWeek) || 3;
@@ -145,6 +163,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="weekly">Specific Days in a Week</SelectItem>
+                <SelectItem value="every-n-weeks">Every N Weeks on Selected Days</SelectItem>
                 <SelectItem value="at-least-weekly">At Least X Days a Week</SelectItem>
               </SelectContent>
             </Select>
@@ -154,6 +173,7 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
           {frequencyType === 'weekly' && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Select Days</Label>
+              <DayPresetChips selected={selectedDays} onSelect={setSelectedDays} />
               <div className="flex gap-2 flex-wrap">
                 {weekDays.map((day) => (
                   <button
@@ -170,6 +190,9 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
                     {day.label}
                   </button>
                 ))}
+              </div>
+              <div className="pt-1">
+                <WeeklyLoadPreview selectedDays={selectedDays} excludeTaskId={task?.id} />
               </div>
             </div>
           )}
@@ -229,21 +252,38 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
             </div>
           )}
 
-          {frequencyType === 'specific-day' && (
+          {frequencyType === 'every-n-weeks' && (
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Select Day</Label>
-              <Select value={specificDay} onValueChange={(v) => setSpecificDay(v as DayOfWeek)}>
+              <Label className="text-sm font-semibold">Repeat every</Label>
+              <Select value={weekInterval} onValueChange={setWeekInterval}>
                 <SelectTrigger className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DAYS_OF_WEEK.map((day) => (
-                    <SelectItem key={day} value={day} className="capitalize">
-                      {day}
-                    </SelectItem>
+                  {[2, 3, 4, 6, 8].map((n) => (
+                    <SelectItem key={n} value={n.toString()}>{n} weeks</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <Label className="text-sm font-semibold pt-2 block">On these days</Label>
+              <DayPresetChips selected={selectedDays} onSelect={setSelectedDays} />
+              <div className="flex gap-2 flex-wrap">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => toggleDay(day.value)}
+                    className={cn(
+                      'w-12 h-10 rounded-lg text-sm font-medium transition-all',
+                      selectedDays.includes(day.value)
+                        ? 'gradient-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

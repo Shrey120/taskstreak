@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TaskProvider } from '@/contexts/TaskContext';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
+import { PauseManager } from '@/components/PauseManager';
 
 import { AllTasksView } from '@/components/AllTasksView';
 import { HabitMetricView, HabitMetric } from '@/components/HabitMetricView';
@@ -127,6 +128,12 @@ function Dashboard() {
           {view === 'timeline' && (
             <div className="mb-5 flex items-center gap-2 lg:hidden">
               <DateControls selectedDate={selectedDate} onChange={setSelectedDate} />
+            </div>
+          )}
+
+          {view === 'all' && (
+            <div className="mb-5 flex items-center justify-end">
+              <PauseManager />
             </div>
           )}
 

@@ -8,12 +8,16 @@ import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { useTasks } from '@/contexts/TaskContext';
-import { FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS, Subtask } from '@/types/task';
+import { Task, FrequencyType, DayOfWeek, DAYS_OF_WEEK, DIFFICULTY_MULTIPLIERS, Subtask } from '@/types/task';
 import { TRAITS, TraitId } from '@/lib/xpUtils';
 import { Plus, HelpCircle, CalendarIcon, Clock, X, ListChecks } from 'lucide-react';
 import { TimePicker } from './TimePicker';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { DayPresetChips } from './DayPresetChips';
+import { WeeklyLoadPreview } from './WeeklyLoadPreview';
+import { parseTaskInput } from '@/lib/parseTaskInput';
+import { toKey, weekStartKey } from '@/lib/periodUtils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CreateTaskDialogProps {
@@ -28,6 +32,8 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [selectedMonthDays, setSelectedMonthDays] = useState<number[]>([]);
   const [specificDate, setSpecificDate] = useState<Date>();
+  const [weekInterval, setWeekInterval] = useState('2');
+  const [quickAdd, setQuickAdd] = useState('');
   const [specificDay, setSpecificDay] = useState<DayOfWeek>('monday');
   const [minDaysWeek, setMinDaysWeek] = useState('3');
   const [minDaysMonth, setMinDaysMonth] = useState('10');
@@ -80,7 +86,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
   const handleSubmit = () => {
     if (!name.trim() || (isHourly ? !perMinuteRate : !amount)) return;
 
-    let frequencyValue: number[] | string | DayOfWeek | number;
+    let frequencyValue: Task['frequencyValue'];
     switch (frequencyType) {
       case 'weekly':
         frequencyValue = selectedDays;
@@ -91,8 +97,13 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
       case 'specific-date':
         frequencyValue = specificDate ? format(specificDate, 'yyyy-MM-dd') : '';
         break;
-      case 'specific-day':
-        frequencyValue = specificDay;
+      case 'every-n-weeks':
+        frequencyValue = {
+          interval: Math.max(1, parseInt(weekInterval, 10) || 2),
+          days: selectedDays,
+          // Anchor on the current week, so "every other week" starts now.
+          anchor: weekStartKey(toKey(new Date())),
+        };
         break;
       case 'at-least-weekly':
         frequencyValue = parseInt(minDaysWeek) || 3;
@@ -138,6 +149,31 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
     );
   };
 
+  /**
+   * Fill the form from one typed line. Everything it understands lands in the
+   * normal controls below, so the parse is always visible and correctable
+   * before saving — nothing is applied invisibly.
+   */
+  const applyQuickAdd = () => {
+    const text = quickAdd.trim();
+    if (!text) return;
+    const parsed = parseTaskInput(text);
+    if (parsed.name) setName(parsed.name);
+    if (parsed.time) setScheduledTime(parsed.time);
+    if (parsed.everyNWeeks) {
+      setFrequencyType('every-n-weeks');
+      setWeekInterval(String(parsed.everyNWeeks));
+      if (parsed.days.length) setSelectedDays(parsed.days);
+    } else if (parsed.timesPerWeek) {
+      setFrequencyType('at-least-weekly');
+      setMinDaysWeek(String(parsed.timesPerWeek));
+    } else if (parsed.days.length) {
+      setFrequencyType('weekly');
+      setSelectedDays(parsed.days);
+    }
+    setQuickAdd('');
+  };
+
   const toggleMonthDay = (day: number) => {
     setSelectedMonthDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
@@ -171,6 +207,28 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
         </DialogHeader>
         
         <div className="space-y-5 py-4">
+          {/* Quick add — type it in one line, then check the fields below */}
+          <div className="space-y-2">
+            <Label htmlFor="quick-add" className="text-sm font-semibold">Quick add</Label>
+            <div className="flex gap-2">
+              <Input
+                id="quick-add"
+                value={quickAdd}
+                onChange={(e) => setQuickAdd(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyQuickAdd(); } }}
+                placeholder="gym mon wed fri 7am"
+                className="h-11"
+              />
+              <Button type="button" variant="outline" className="h-11 shrink-0"
+                      onClick={applyQuickAdd} disabled={!quickAdd.trim()}>
+                Fill
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Understands days, "weekdays", "every other week", "3x a week" and times.
+            </p>
+          </div>
+
           {/* Task Name */}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-semibold">Task Name</Label>
@@ -231,6 +289,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="weekly">Specific Days in a Week</SelectItem>
+                <SelectItem value="every-n-weeks">Every N Weeks on Selected Days</SelectItem>
                 <SelectItem value="at-least-weekly">At Least X Days a Week</SelectItem>
               </SelectContent>
             </Select>
@@ -240,6 +299,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
           {frequencyType === 'weekly' && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Select Days</Label>
+              <DayPresetChips selected={selectedDays} onSelect={setSelectedDays} />
               <div className="flex gap-2 flex-wrap">
                 {weekDays.map((day) => (
                   <button
@@ -256,6 +316,9 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                     {day.label}
                   </button>
                 ))}
+              </div>
+              <div className="pt-1">
+                <WeeklyLoadPreview selectedDays={selectedDays} />
               </div>
             </div>
           )}
@@ -340,21 +403,41 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
             </div>
           )}
 
-          {frequencyType === 'specific-day' && (
+          {frequencyType === 'every-n-weeks' && (
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Select Day</Label>
-              <Select value={specificDay} onValueChange={(v) => setSpecificDay(v as DayOfWeek)}>
+              <Label className="text-sm font-semibold">Repeat every</Label>
+              <Select value={weekInterval} onValueChange={setWeekInterval}>
                 <SelectTrigger className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DAYS_OF_WEEK.map((day) => (
-                    <SelectItem key={day} value={day} className="capitalize">
-                      {day}
-                    </SelectItem>
+                  {[2, 3, 4, 6, 8].map((n) => (
+                    <SelectItem key={n} value={n.toString()}>{n} weeks</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <Label className="text-sm font-semibold pt-2 block">On these days</Label>
+              <DayPresetChips selected={selectedDays} onSelect={setSelectedDays} />
+              <div className="flex gap-2 flex-wrap">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => toggleDay(day.value)}
+                    className={cn(
+                      'w-12 h-10 rounded-lg text-sm font-medium transition-all',
+                      selectedDays.includes(day.value)
+                        ? 'gradient-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Counting from this week, then skipping {Math.max(1, parseInt(weekInterval, 10) || 2) - 1}.
+              </p>
             </div>
           )}
 

@@ -92,3 +92,18 @@ export function quotaMet(task: Task, date: Date): boolean {
   const key = toKey(date);
   return successesInPeriod(task, key, unit) >= Math.max(1, task.frequencyValue as number);
 }
+
+/**
+ * Whether a monthly task's selected days-of-month fall on `date`.
+ *
+ * A selection longer than the month clamps to its last day, so a task set to
+ * the 31st still fires on 30 April and 28/29 February rather than silently
+ * never running in the five short months. Overflowing selections collapse
+ * onto that same last day, so picking both 30 and 31 yields one due date in
+ * April, not two.
+ */
+export function isMonthDayDue(days: number[], date: Date): boolean {
+  const dom = date.getDate();
+  const lastDom = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  return days.some((d) => d === dom || (d > lastDom && dom === lastDom));
+}

@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { Task, DIFFICULTY_MULTIPLIERS } from '@/types/task';
 import { TraitId, TRAITS, baseXpForDifficulty } from '@/lib/xpUtils';
 import { getStreakCycleLength } from '@/lib/streakUtils';
+import { isMonthDayDue } from '@/lib/periodUtils';
 
 /**
  * Estimate the maximum ADDITIONAL XP each trait can still gain between `from`
@@ -62,13 +63,12 @@ function dueOnDate(task: Task, date: Date): boolean {
   const dateStr = ymd(date);
   if (task.startDate > dateStr) return false;
   const dayOfWeek = date.getDay();
-  const dayOfMonth = date.getDate();
   const dayName = format(date, 'EEEE').toLowerCase();
   switch (task.frequencyType) {
     case 'weekly':
       return (task.frequencyValue as number[]).includes(dayOfWeek);
     case 'monthly':
-      return (task.frequencyValue as number[]).includes(dayOfMonth);
+      return isMonthDayDue(task.frequencyValue as number[], date);
     case 'specific-date':
       return task.frequencyValue === dateStr;
     case 'specific-day':

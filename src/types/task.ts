@@ -1,6 +1,12 @@
 import type { TraitId } from '@/lib/xpUtils';
+import type { EveryNWeeksValue } from '@/lib/schedule';
 
-export type FrequencyType = 'weekly' | 'monthly' | 'specific-date' | 'specific-day' | 'at-least-weekly' | 'at-least-monthly';
+/**
+ * `specific-day` is legacy: it is folded into `weekly` on read by
+ * normalizeFrequency and is never written for new tasks. It stays in the
+ * union so stored rows still type-check.
+ */
+export type FrequencyType = 'weekly' | 'monthly' | 'every-n-weeks' | 'specific-date' | 'specific-day' | 'at-least-weekly' | 'at-least-monthly';
 
 export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
@@ -8,7 +14,7 @@ export interface Task {
   id: string;
   name: string;
   frequencyType: FrequencyType;
-  frequencyValue: number[] | string | DayOfWeek | number; // days of week (0-6), day of month (1-31), date string, day name, or minimum count
+  frequencyValue: number[] | string | DayOfWeek | number | EveryNWeeksValue; // days of week (0-6), day of month (1-31), date string, day name, minimum count, or every-N-weeks config
   amount: number;
   baseAmount: number;
   difficulty: 1 | 2 | 3 | 4 | 5;

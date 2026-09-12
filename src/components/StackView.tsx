@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -12,22 +13,24 @@ interface StackItem {
   createdAt: number;
 }
 
-function storageKey(userId?: string) {
-  return `taskstreak:stack:${userId ?? 'anon'}`;
-}
-
-function load(userId?: string): StackItem[] {
-  try {
-    const raw = localStorage.getItem(storageKey(userId));
-    if (!raw) return [];
-    return JSON.parse(raw) as StackItem[];
-  } catch {
-    return [];
-  }
-}
-
-function save(userId: string | undefined, items: StackItem[]) {
-  localStorage.setItem(storageKey(userId), JSON.stringify(items));
+/**
+ * The stack lives server-side so the same login sees the same pile on every
+ * device. Newest first, matching how items are pushed on.
+ */
+async function load(deviceId?: string): Promise<StackItem[]> {
+  if (!deviceId) return [];
+  const { data, error } = await supabase
+    .from('stack_items')
+    .select('id, title, note, created_at')
+    .eq('device_id', deviceId)
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data.map((r) => ({
+    id: r.id,
+    title: r.title,
+    note: r.note ?? undefined,
+    createdAt: new Date(r.created_at).getTime(),
+  }));
 }
 
 export function StackView() {
@@ -38,27 +41,42 @@ export function StackView() {
   const [completedToday, setCompletedToday] = useState(0);
   const [anim, setAnim] = useState<'none' | 'complete' | 'sendBack'>('none');
 
-  useEffect(() => {
-    setItems(load(user?.id));
-  }, [user?.id]);
+  const deviceId = user?.device_id || '';
 
+  useEffect(() => {
+    let cancelled = false;
+    load(deviceId).then((rows) => { if (!cancelled) setItems(rows); });
+    return () => { cancelled = true; };
+  }, [deviceId]);
+
+  /**
+   * Removals are driven by which items disappeared, so a completed or
+   * discarded card is deleted on the server too rather than only locally.
+   */
   const persist = (next: StackItem[]) => {
+    const goneIds = items.filter((i) => !next.some((n) => n.id === i.id)).map((i) => i.id);
     setItems(next);
-    save(user?.id, next);
+    if (goneIds.length > 0) {
+      supabase.from('stack_items').delete().in('id', goneIds)
+        .then(({ error }) => { if (error) console.error('stack delete:', error); });
+    }
   };
 
-  const add = () => {
+  const add = async () => {
     const t = title.trim();
-    if (!t) return;
-    const item: StackItem = {
-      id: crypto.randomUUID(),
-      title: t,
-      note: note.trim() || undefined,
-      createdAt: Date.now(),
-    };
-    persist([item, ...items]);
+    if (!t || !deviceId) return;
     setTitle('');
     setNote('');
+    const { data, error } = await supabase
+      .from('stack_items')
+      .insert({ device_id: deviceId, title: t, note: note.trim() || null })
+      .select('id, title, note, created_at')
+      .single();
+    if (error || !data) return;
+    setItems((prev) => [
+      { id: data.id, title: data.title, note: data.note ?? undefined, createdAt: new Date(data.created_at).getTime() },
+      ...prev,
+    ]);
   };
 
   const top = items[0];

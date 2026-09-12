@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import { Task } from '@/types/task';
+import { isTaskDueOn } from '@/lib/schedule';
 
 /**
  * How many consecutive successful completions make up one full "streak cycle"
@@ -20,6 +21,7 @@ export function getStreakCycleLength(task: Task): number {
   switch (task.frequencyType) {
     case 'weekly':
     case 'monthly':
+    case 'every-n-weeks':
     case 'specific-day':
     case 'at-least-weekly':
     case 'at-least-monthly':
@@ -32,25 +34,12 @@ export function getStreakCycleLength(task: Task): number {
 }
 
 
+/**
+ * Thin alias kept for the streak engine's own call sites. The rules live in
+ * `@/lib/schedule` so the views and the streak maths cannot drift apart.
+ */
 export function isTaskDueOnDateGeneric(task: Task, date: Date): boolean {
-  const dateStr = format(date, 'yyyy-MM-dd');
-  if (task.startDate > dateStr) return false;
-  const dow = date.getDay();
-  const dom = date.getDate();
-  const dayName = format(date, 'EEEE').toLowerCase();
-  switch (task.frequencyType) {
-    case 'weekly': return (task.frequencyValue as number[]).includes(dow);
-    case 'monthly': return (task.frequencyValue as number[]).includes(dom);
-    case 'specific-date': return task.frequencyValue === dateStr;
-    case 'specific-day': return task.frequencyValue === dayName;
-    case 'at-least-weekly':
-    case 'at-least-monthly':
-      // Flexible schedule: the task doesn't have hard per-day due dates. Streak
-      // logic MUST NOT treat every calendar day as a due date — use the
-      // period-aware helpers below (computeAtLeastRawStreak) instead.
-      return true;
-    default: return false;
-  }
+  return isTaskDueOn(task, date);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ import { EditTaskDialog } from './EditTaskDialog';
 import { ConfirmDeleteTask } from './ConfirmDeleteTask';
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual } from 'date-fns';
 import { getStreakCycleLength } from '@/lib/streakUtils';
+import { isMonthDayDue } from '@/lib/periodUtils';
+import { isEveryNWeeksValue } from '@/lib/schedule';
 import {
   Dialog,
   DialogContent,
@@ -42,6 +44,13 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
         return `${(task.frequencyValue as number[]).length} days/week`;
       case 'monthly':
         return `${(task.frequencyValue as number[]).length} days/month`;
+      case 'every-n-weeks': {
+        const v = task.frequencyValue;
+        if (!isEveryNWeeksValue(v)) return 'Every few weeks';
+        return v.interval === 2
+          ? `${v.days.length} days, every other week`
+          : `${v.days.length} days, every ${v.interval} weeks`;
+      }
       case 'at-least-weekly':
         return `At least ${task.frequencyValue} days/week`;
       case 'at-least-monthly':
@@ -84,7 +93,6 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
 
       daysToCheck.forEach(date => {
         const dayOfWeek = date.getDay();
-        const dayOfMonth = date.getDate();
         const dayName = format(date, 'EEEE').toLowerCase();
         const dateStr = format(date, 'yyyy-MM-dd');
         
@@ -95,7 +103,7 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
             wasScheduled = (task.frequencyValue as number[]).includes(dayOfWeek);
             break;
           case 'monthly':
-            wasScheduled = (task.frequencyValue as number[]).includes(dayOfMonth);
+            wasScheduled = isMonthDayDue(task.frequencyValue as number[], date);
             break;
           case 'specific-date':
             wasScheduled = task.frequencyValue === dateStr;
@@ -459,7 +467,6 @@ function TaskAnalyticsDialog({ task, open, onOpenChange }: TaskAnalyticsDialogPr
     let scheduledDays = 0;
     daysToCheck.forEach(date => {
       const dayOfWeek = date.getDay();
-      const dayOfMonth = date.getDate();
       const dayName = format(date, 'EEEE').toLowerCase();
       const dateStr = format(date, 'yyyy-MM-dd');
       
@@ -468,7 +475,7 @@ function TaskAnalyticsDialog({ task, open, onOpenChange }: TaskAnalyticsDialogPr
           if ((task.frequencyValue as number[]).includes(dayOfWeek)) scheduledDays++;
           break;
         case 'monthly':
-          if ((task.frequencyValue as number[]).includes(dayOfMonth)) scheduledDays++;
+          if (isMonthDayDue(task.frequencyValue as number[], date)) scheduledDays++;
           break;
         case 'specific-date':
           if (task.frequencyValue === dateStr) scheduledDays++;

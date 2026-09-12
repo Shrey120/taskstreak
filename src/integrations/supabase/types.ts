@@ -140,6 +140,30 @@ export type Database = {
           },
         ]
       }
+      task_skips: {
+        Row: { created_at: string; device_id: string; id: string; skip_date: string; task_id: string }
+        Insert: { created_at?: string; device_id: string; id?: string; skip_date: string; task_id: string }
+        Update: { created_at?: string; device_id?: string; id?: string; skip_date?: string; task_id?: string }
+        Relationships: []
+      }
+      subtask_missed: {
+        Row: { created_at: string; device_id: string; id: string; missed_date: string; subtask_id: string; task_id: string }
+        Insert: { created_at?: string; device_id: string; id?: string; missed_date: string; subtask_id: string; task_id: string }
+        Update: { created_at?: string; device_id?: string; id?: string; missed_date?: string; subtask_id?: string; task_id?: string }
+        Relationships: []
+      }
+      pause_ranges: {
+        Row: { created_at: string; device_id: string; end_date: string; id: string; label: string | null; start_date: string }
+        Insert: { created_at?: string; device_id: string; end_date: string; id?: string; label?: string | null; start_date: string }
+        Update: { created_at?: string; device_id?: string; end_date?: string; id?: string; label?: string | null; start_date?: string }
+        Relationships: []
+      }
+      stack_items: {
+        Row: { created_at: string; device_id: string; id: string; note: string | null; title: string }
+        Insert: { created_at?: string; device_id: string; id?: string; note?: string | null; title: string }
+        Update: { created_at?: string; device_id?: string; id?: string; note?: string | null; title?: string }
+        Relationships: []
+      }
       subtasks: {
         Row: {
           created_at: string | null
