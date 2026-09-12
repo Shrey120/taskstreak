@@ -1,11 +1,11 @@
 import type { ComponentType } from 'react';
 import {
   Clock, Layers, List, Flame, BookOpen,
-  Coins, Trophy, Target, XCircle, CalendarDays, TrendingUp, Zap, TrendingDown,
+  Coins, Trophy, Target, XCircle, CalendarDays, TrendingUp, Zap, TrendingDown, ScrollText,
 } from 'lucide-react';
 import type { HabitMetric } from '@/components/HabitMetricView';
 
-export type CoreView = 'timeline' | 'stack' | 'all' | 'growth' | 'codex';
+export type CoreView = 'timeline' | 'stack' | 'all' | 'growth' | 'report' | 'codex';
 export type ViewType = CoreView | `metric:${HabitMetric}`;
 
 export interface NavItem<T extends string> {
@@ -19,6 +19,7 @@ export const CORE_TABS: NavItem<CoreView>[] = [
   { id: 'stack', label: 'Stack', icon: Layers },
   { id: 'all', label: 'All tasks', icon: List },
   { id: 'growth', label: 'Growth', icon: Flame },
+  { id: 'report', label: 'Report', icon: ScrollText },
   { id: 'codex', label: 'Codex', icon: BookOpen },
 ];
 

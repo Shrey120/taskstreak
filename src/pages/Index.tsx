@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { TaskProvider } from '@/contexts/TaskContext';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { PauseManager } from '@/components/PauseManager';
+import { ReportView } from '@/components/ReportView';
 
 import { AllTasksView } from '@/components/AllTasksView';
 import { HabitMetricView, HabitMetric } from '@/components/HabitMetricView';
@@ -144,6 +145,7 @@ function Dashboard() {
             {view === 'stack' && <StackView />}
             {view === 'all' && <AllTasksView />}
             {view === 'growth' && <GrowthView />}
+            {view === 'report' && <ReportView />}
             {view === 'codex' && <CodexView />}
             {isMetric && metric && <HabitMetricView metric={metric} />}
           </div>
