@@ -38,66 +38,6 @@ export type Database = {
         }
         Relationships: []
       }
-      push_subscriptions: {
-        Row: {
-          auth: string
-          created_at: string
-          device_id: string
-          endpoint: string
-          id: string
-          p256dh: string
-          tz_offset_minutes: number | null
-          updated_at: string
-        }
-        Insert: {
-          auth: string
-          created_at?: string
-          device_id: string
-          endpoint: string
-          id?: string
-          p256dh: string
-          tz_offset_minutes?: number | null
-          updated_at?: string
-        }
-        Update: {
-          auth?: string
-          created_at?: string
-          device_id?: string
-          endpoint?: string
-          id?: string
-          p256dh?: string
-          tz_offset_minutes?: number | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      sent_reminders: {
-        Row: {
-          created_at: string
-          device_id: string
-          id: string
-          reminder_date: string
-          reminder_type: string
-          task_id: string
-        }
-        Insert: {
-          created_at?: string
-          device_id: string
-          id?: string
-          reminder_date: string
-          reminder_type?: string
-          task_id: string
-        }
-        Update: {
-          created_at?: string
-          device_id?: string
-          id?: string
-          reminder_date?: string
-          reminder_type?: string
-          task_id?: string
-        }
-        Relationships: []
-      }
       subtask_completions: {
         Row: {
           completed_date: string

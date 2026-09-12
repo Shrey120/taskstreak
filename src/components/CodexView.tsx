@@ -423,18 +423,15 @@ export function CodexView() {
       <section>
         <SectionTitle icon={<Bell className="h-3.5 w-3.5" />}>Reminders &amp; sync</SectionTitle>
         <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
-          <Block title="Turning them on">
-            <B>All tasks → Notifications</B>, once per device, for the website. Works in Chrome,
-            Edge and Firefox on desktop and Android. On iPhone add TaskStreak to the Home Screen
-            first — Safari refuses notifications from an ordinary tab.
+          <Block title="How they work">
+            Scheduled entirely on the phone itself, by the installed Android app — no server, no
+            toggle, no account to enrol. Reminders, streak warnings and the Sunday digest all work
+            offline. It plans a day or two ahead and tops itself up whenever the app is opened, so
+            open it daily.
           </Block>
-          <Block title="The installed Android app">
-            Needs no toggle and no server: it schedules everything on the phone itself, so
-            reminders, streak warnings and the Sunday digest all work offline. It plans a day or
-            two ahead and tops itself up whenever you open the app, so open it daily. If alerts
-            arrive late or not at all, set{' '}
-            <B>Settings → Apps → TaskStreak → Battery</B> to Unrestricted — Android otherwise
-            kills scheduled alarms.
+          <Block title="If alerts arrive late or not at all">
+            Set <B>Settings → Apps → TaskStreak → Battery</B> to Unrestricted — Android otherwise
+            kills scheduled alarms, especially on Xiaomi, OnePlus and Samsung.
           </Block>
           <Block title="Task due">
             A task with a scheduled time pushes a notification{' '}
@@ -452,8 +449,9 @@ export function CodexView() {
           </Block>
           <Block title="Same data everywhere">
             Tasks, completions, skips, missed subtasks, pauses, wallet, XP and the Stack all live
-            on the server, so one login shows the same state on phone and laptop. Only your login
-            session and whether the sidebar is collapsed stay on the device.
+            on the server, so one login shows the same state on every installed copy of the app.
+            Only your login session, whether the sidebar is collapsed, and the notification
+            schedule itself stay on the device.
           </Block>
         </div>
       </section>

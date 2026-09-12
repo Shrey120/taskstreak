@@ -271,19 +271,12 @@ async function scheduleNative(fires: Fire[]) {
   });
 }
 
-// ------- Web fallback -------
-// Real Web Push (works even when the app is closed) is handled by the
-// Supabase edge function `send-task-reminders` + the service worker at
-// public/sw.js. See src/lib/webPush.ts for enrollment. The old in-tab
-// setTimeout fallback was unreliable (only fired while the tab was open)
-// and has been removed.
-
-async function scheduleWeb(_fires: Fire[]) {
-  /* no-op — server-side Web Push handles web reminders */
-}
-
-
 // ------- Public API -------
+//
+// Notifications are native-only: scheduled on-device by the installed
+// Android app via @capacitor/local-notifications. There is deliberately no
+// browser/PWA path -- Web Push (a service worker, a VAPID keypair, an edge
+// function, a subscribe toggle) has been removed entirely in favour of it.
 
 export async function initReminders() {
   if (isNative()) {
@@ -318,8 +311,7 @@ export async function initReminders() {
     }
     await ensureNativePermission();
   }
-  // Web push is enrolled via src/lib/webPush.ts and delivered by the
-  // Supabase edge function `send-task-reminders`. Nothing to do here.
+  // Non-native (an ordinary browser tab): nothing to schedule.
 }
 
 export async function rescheduleReminders(tasks: Task[], ctx: ReminderContext) {
@@ -327,7 +319,5 @@ export async function rescheduleReminders(tasks: Task[], ctx: ReminderContext) {
   const fires = [...buildFires(tasks, now, ctx), ...buildEveningFires(tasks, now, ctx)];
   if (isNative()) {
     await scheduleNative(fires).catch((e) => console.warn('[notif] native schedule failed', e));
-  } else {
-    await scheduleWeb(fires);
   }
 }
