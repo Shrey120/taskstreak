@@ -1,0 +1,179 @@
+import { useTasks } from '@/contexts/TaskContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { CreateTaskDialog } from '@/components/CreateTaskDialog';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { CORE_TABS, METRIC_TABS, type ViewType } from '@/lib/navItems';
+import { TRAITS, levelForXp } from '@/lib/xpUtils';
+import { cn } from '@/lib/utils';
+import { ChevronDown, Flame, LogOut, Plus, Sparkles, Wallet } from 'lucide-react';
+
+interface AppTopNavProps {
+  view: ViewType;
+  onSelect: (view: ViewType) => void;
+}
+
+/**
+ * Permanent desktop navigation (lg and up), as a single horizontal bar under
+ * the app header rather than a left-hand rail. Every top-level destination is
+ * a tab in one row; the eight per-task metric views are one level down behind
+ * a "Metrics" menu, since fourteen destinations across in a row stops reading
+ * as navigation and starts reading as noise.
+ *
+ * Phones and tablets are untouched: they still get the hamburger drawer and
+ * bottom tab bar from AppNavDrawer / BottomNav.
+ */
+export function AppTopNav({ view, onSelect }: AppTopNavProps) {
+  const { wallet, traitXp } = useTasks();
+  const { user, logout } = useAuth();
+  const totalXp = TRAITS.reduce((s, t) => s + (traitXp[t.id] || 0), 0);
+  const level = levelForXp(totalXp).level;
+  const isMetric = view.startsWith('metric:');
+
+  return (
+    <div className="sticky top-14 z-20 hidden border-b border-border/50 bg-background/80 backdrop-blur-xl lg:top-16 lg:block">
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-gutter">
+        <span className="mr-1 flex shrink-0 items-center gap-1.5">
+          <span className="font-display text-base font-bold text-foreground">TaskStreak</span>
+          <Sparkles className="h-3.5 w-3.5 text-accent" />
+        </span>
+
+        <nav className="flex shrink-0 items-center gap-1">
+          {CORE_TABS.map((t) => (
+            <TopNavTab
+              key={t.id}
+              label={t.label}
+              icon={t.icon}
+              active={view === t.id}
+              onClick={() => onSelect(t.id)}
+            />
+          ))}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'flex h-9 items-center gap-1 rounded-lg px-3 text-[13px] font-medium transition-colors',
+                  isMetric
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
+                )}
+              >
+                Metrics
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {METRIC_TABS.map((t) => {
+                const id = `metric:${t.id}` as ViewType;
+                const Icon = t.icon;
+                return (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onClick={() => onSelect(id)}
+                    className={cn('gap-2', view === id && 'bg-primary/10 text-primary')}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {t.label}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </nav>
+
+        <div className="flex-1" />
+
+        <CreateTaskDialog
+          trigger={
+            <Button size="sm" className="h-9 gap-1.5 font-semibold">
+              <Plus className="h-4 w-4" />
+              New task
+            </Button>
+          }
+        />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex h-9 cursor-default items-center gap-1.5 rounded-lg border border-border/50 bg-card/60 px-2.5">
+              <Wallet className="h-4 w-4 text-accent" />
+              <span className={cn('text-[13px] font-bold tabular-nums', wallet < 0 ? 'text-destructive' : 'text-foreground')}>
+                {compactMoney(wallet)}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Wallet · ₹{wallet.toFixed(2)}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex h-9 cursor-default items-center gap-1.5 rounded-lg border border-border/50 bg-card/60 px-2.5">
+              <Flame className={cn('h-4 w-4', level < 0 ? 'text-destructive' : 'text-primary')} />
+              <span className={cn('text-[13px] font-bold tabular-nums', level < 0 ? 'text-destructive' : 'text-foreground')}>
+                {level}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Level {level} · {totalXp.toLocaleString()} XP</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={logout}
+              aria-label={`Log out @${user?.username ?? ''}`}
+              className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full gradient-primary text-[11px] font-bold text-primary-foreground">
+                {(user?.username ?? '?').charAt(0).toUpperCase()}
+              </div>
+              <LogOut className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Log out @{user?.username}</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
+function TopNavTab({
+  label,
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
+      )}
+    >
+      <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} />
+      {label}
+    </button>
+  );
+}
+
+function compactMoney(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 100_000) return `${sign}${(abs / 100_000).toFixed(1)}L`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}k`;
+  return `${sign}${Math.round(abs)}`;
+}

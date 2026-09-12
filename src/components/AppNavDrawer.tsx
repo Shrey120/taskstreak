@@ -15,7 +15,7 @@ interface AppNavDrawerProps {
 
 /**
  * Navigation for phones and tablets only. On lg+ the same destinations live in
- * the always-visible AppSidebar, and this drawer is never mounted.
+ * the always-visible AppTopNav, and this drawer is never mounted.
  */
 export function AppNavDrawer({ open, onOpenChange, view, onSelect }: AppNavDrawerProps) {
   const { user, logout } = useAuth();

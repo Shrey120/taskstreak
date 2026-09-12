@@ -14,7 +14,7 @@ import { DailyProgressRing } from '@/components/DailyProgressRing';
 import { CompletionEffectLayer, useCompletionEffect } from '@/components/CompletionEffect';
 import { ReminderScheduler } from '@/components/ReminderScheduler';
 import { AppNavDrawer } from '@/components/AppNavDrawer';
-import { AppSidebar, SIDEBAR_W, SIDEBAR_W_COLLAPSED } from '@/components/AppSidebar';
+import { AppTopNav } from '@/components/AppTopNav';
 import { BottomNav } from '@/components/BottomNav';
 
 import { labelForView, type ViewType } from '@/lib/navItems';
@@ -30,34 +30,15 @@ import { format } from 'date-fns';
  */
 const WIDE_VIEWS = new Set<string>(['all', 'growth', 'stack']);
 
-const NAV_COLLAPSED_KEY = 'taskstreak:navCollapsed';
-
 function Dashboard() {
   const [view, setView] = useState<ViewType>('timeline');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  // Defaults to the narrow icon rail so the sidebar costs 64px, not 260px.
-  const [navCollapsed, setNavCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(NAV_COLLAPSED_KEY) !== 'false';
-    } catch {
-      return true;
-    }
-  });
   const { triggerCompletion, particles, showBanner, earnedAmount } = useCompletionEffect();
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NAV_COLLAPSED_KEY, String(navCollapsed));
-    } catch {
-      /* private mode — the rail just won't be remembered */
-    }
-  }, [navCollapsed]);
 
   const isMetric = view.startsWith('metric:');
   const metric = isMetric ? (view.split(':')[1] as HabitMetric) : null;
   const wide = WIDE_VIEWS.has(view) || isMetric;
-  const railWidth = navCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W;
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-background">
@@ -66,23 +47,12 @@ function Dashboard() {
         <div className="absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl" />
       </div>
 
-      {/* Phones/tablets: drawer. Desktop: permanent rail. Only one is ever rendered. */}
+      {/* Phones/tablets: drawer. Desktop: horizontal bar under the header. */}
       <div className="lg:hidden">
         <AppNavDrawer open={drawerOpen} onOpenChange={setDrawerOpen} view={view} onSelect={setView} />
       </div>
-      <AppSidebar
-        view={view}
-        onSelect={setView}
-        collapsed={navCollapsed}
-        onToggleCollapsed={() => setNavCollapsed((c) => !c)}
-      />
 
-      {/* The offset only applies from lg up, so it rides on a CSS variable
-          rather than an inline padding that would also indent phones. */}
-      <div
-        className="transition-[padding] duration-200 lg:pl-[var(--rail-w)]"
-        style={{ '--rail-w': `${railWidth}px` } as React.CSSProperties}
-      >
+      <div>
         {/* App bar */}
         <header className="safe-top sticky top-0 z-30 border-b border-border/50 bg-background/70 backdrop-blur-xl">
           <div
@@ -117,6 +87,8 @@ function Dashboard() {
             </div>
           </div>
         </header>
+
+        <AppTopNav view={view} onSelect={setView} />
 
         <main
           className={cn(

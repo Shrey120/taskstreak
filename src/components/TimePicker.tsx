@@ -118,13 +118,20 @@ function Wheel<T extends number | string>({ items, value, onChange, render, aria
   );
 }
 
-function PickerBody({ value, onDone }: { value: string; onDone: (v: string) => void }) {
+function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => void }) {
   const initial = parseValue(value);
   const [h12, setH12] = useState(initial.h12);
   const [m, setM] = useState(initial.m);
   const [period, setPeriod] = useState<'AM' | 'PM'>(initial.period);
   const [hText, setHText] = useState(String(initial.h12));
   const [mText, setMText] = useState(initial.m.toString().padStart(2, '0'));
+  // An empty/invalid value has no real time to show, so the wheels have to
+  // rest SOMEWHERE -- parseValue picks 7:00 AM. Without this flag, opening
+  // the picker just to look and tapping Done to close it would silently
+  // write that resting position as a real, chosen time. Done only commits
+  // once the user has actually moved something.
+  const [touched, setTouched] = useState(false);
+  const markTouched = () => setTouched(true);
 
   useEffect(() => { setHText(String(h12)); }, [h12]);
   useEffect(() => { setMText(m.toString().padStart(2, '0')); }, [m]);
@@ -134,12 +141,12 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v: string) => v
 
   const commitTypedHour = () => {
     const n = parseInt(hText, 10);
-    if (!isNaN(n)) setH12(Math.max(1, Math.min(12, n)));
+    if (!isNaN(n)) { setH12(Math.max(1, Math.min(12, n))); markTouched(); }
     else setHText(String(h12));
   };
   const commitTypedMinute = () => {
     const n = parseInt(mText, 10);
-    if (!isNaN(n)) setM(Math.max(0, Math.min(59, n)));
+    if (!isNaN(n)) { setM(Math.max(0, Math.min(59, n))); markTouched(); }
     else setMText(m.toString().padStart(2, '0'));
   };
 
@@ -147,20 +154,20 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v: string) => v
     <div className="p-4 space-y-4">
       {/* Wheels */}
       <div className="relative flex items-stretch gap-2 rounded-xl bg-secondary/40 border border-border/50 p-2">
-        <Wheel<number> ariaLabel="Hour" items={hours} value={h12} onChange={setH12} />
+        <Wheel<number> ariaLabel="Hour" items={hours} value={h12} onChange={(v) => { setH12(v); markTouched(); }} />
         <div className="self-center text-2xl font-bold text-muted-foreground select-none">:</div>
         <Wheel<number>
           ariaLabel="Minute"
           items={minutes}
           value={m}
-          onChange={setM}
+          onChange={(v) => { setM(v); markTouched(); }}
           render={(x) => x.toString().padStart(2, '0')}
         />
         <Wheel<'AM' | 'PM'>
           ariaLabel="AM or PM"
           items={['AM', 'PM']}
           value={period}
-          onChange={setPeriod}
+          onChange={(v) => { setPeriod(v); markTouched(); }}
         />
       </div>
 
@@ -200,7 +207,7 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v: string) => v
               <button
                 key={p}
                 type="button"
-                onClick={() => setPeriod(p)}
+                onClick={() => { setPeriod(p); markTouched(); }}
                 className={cn(
                   'flex-1 text-sm font-semibold transition-colors touch-manipulation',
                   period === p
@@ -217,6 +224,7 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v: string) => v
 
       <Button
         onClick={() => {
+          if (!touched) { onDone(undefined); return; }
           // ensure any un-blurred typed values are applied
           const hn = parseInt(hText, 10);
           const mn = parseInt(mText, 10);
@@ -257,8 +265,8 @@ export function TimePicker({ value, onChange, placeholder = 'Select time' }: Tim
     </Button>
   );
 
-  const handleDone = (v: string) => {
-    onChange(v);
+  const handleDone = (v?: string) => {
+    if (v !== undefined) onChange(v);
     setOpen(false);
   };
 

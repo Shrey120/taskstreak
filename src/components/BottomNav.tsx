@@ -10,7 +10,7 @@ export function BottomNav({ view, onSelect }: BottomNavProps) {
   return (
     <nav
       className={cn(
-        // Hidden from lg up, where AppSidebar carries every destination instead.
+        // Hidden from lg up, where AppTopNav carries every destination instead.
       'fixed inset-x-0 bottom-0 z-40 lg:hidden',
         'safe-bottom safe-x border-t border-border/50 bg-background/90 backdrop-blur-xl',
       )}
