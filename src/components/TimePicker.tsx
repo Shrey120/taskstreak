@@ -224,12 +224,20 @@ function PickerBody({ value, onDone }: { value: string; onDone: (v?: string) => 
 
       <Button
         onClick={() => {
-          if (!touched) { onDone(undefined); return; }
           // ensure any un-blurred typed values are applied
           const hn = parseInt(hText, 10);
           const mn = parseInt(mText, 10);
           const finalH = !isNaN(hn) ? Math.max(1, Math.min(12, hn)) : h12;
           const finalM = !isNaN(mn) ? Math.max(0, Math.min(59, mn)) : m;
+          // `touched` catches an interaction as it happens; comparing the
+          // final numbers against what the picker opened with catches it
+          // even if `touched` lost a race -- a scroll-driven wheel change is
+          // debounced (see handleScroll), so a Done tap landing inside that
+          // debounce window could otherwise fire before the flag was set.
+          // Only truly nothing-happened (still resting on the opening
+          // position, flag never fired either) still closes without saving.
+          const changed = finalH !== initial.h12 || finalM !== initial.m || period !== initial.period;
+          if (!touched && !changed) { onDone(undefined); return; }
           onDone(toHHMM(finalH, finalM, period));
         }}
         className="w-full h-12 text-base font-semibold"

@@ -504,9 +504,11 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                     <TooltipContent className="p-3">
                       <p className="font-semibold mb-2">XP per completion:</p>
                       <div className="space-y-1 text-sm">
-                        <p>Effort 1–2 → {baseXpForEffort(1)} XP</p>
+                        <p>Effort 1 → {baseXpForEffort(1)} XP</p>
+                        <p>Effort 2 → {baseXpForEffort(2)} XP</p>
                         <p>Effort 3 → {baseXpForEffort(3)} XP</p>
-                        <p>Effort 4–5 → {baseXpForEffort(5)} XP</p>
+                        <p>Effort 4 → {baseXpForEffort(4)} XP</p>
+                        <p>Effort 5 → {baseXpForEffort(5)} XP</p>
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
                         How much this actually takes out of you. Set it honestly — it has no

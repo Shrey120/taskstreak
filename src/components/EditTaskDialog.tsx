@@ -97,6 +97,10 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
     setSubtaskItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const updateSubtask = (index: number, patch: Partial<{ name: string; scheduledTime: string }>) => {
+    setSubtaskItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
   const handleSubmit = async () => {
     if (!task || !name.trim() || (isHourly ? !perMinuteRate : !amount)) return;
     if (hasSubtasks && subtaskItems.length === 0) return;
@@ -520,11 +524,45 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
                   Split: ₹{(parseFloat(amount) / subtaskItems.length).toFixed(2)} per subtask
                 </p>
               )}
+              {subtaskItems.length > 0 && (
+                <div className="space-y-2">
+                  {/* Insertion order, not re-sorted by time: this list is edited in
+                      place, and re-sorting on every keystroke would jump the row
+                      out from under whoever is mid-edit. */}
+                  {subtaskItems.map((subtask, index) => (
+                    <div key={subtask.id ?? `new-${index}`} className="flex items-center gap-2 p-2 rounded-lg bg-card border border-border">
+                      <Input
+                        value={subtask.name}
+                        onChange={(e) => updateSubtask(index, { name: e.target.value })}
+                        placeholder="Subtask name…"
+                        className="h-10 flex-1 min-w-0"
+                      />
+                      <Input
+                        type="time"
+                        value={subtask.scheduledTime}
+                        onChange={(e) => updateSubtask(index, { scheduledTime: e.target.value })}
+                        className="h-10 w-32 shrink-0"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-destructive hover:bg-destructive/10"
+                        onClick={() => removeSubtask(index)}
+                        aria-label={`Remove ${subtask.name || 'subtask'}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Input
                   value={newSubtaskName}
                   onChange={(e) => setNewSubtaskName(e.target.value)}
-                  placeholder="Subtask name…"
+                  placeholder="Add a subtask…"
                   className="h-10 flex-1"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -551,35 +589,6 @@ export function EditTaskDialog({ task, open, onOpenChange }: EditTaskDialogProps
                   <Plus className="w-4 h-4" />
                 </Button>
               </div>
-              {subtaskItems.length > 0 && (
-                <div className="space-y-2">
-                  {subtaskItems
-                    .map((subtask, originalIndex) => ({ subtask, originalIndex }))
-                    .sort((a, b) => a.subtask.scheduledTime.localeCompare(b.subtask.scheduledTime))
-                    .map(({ subtask, originalIndex }) => (
-                      <div key={subtask.id ?? `new-${originalIndex}`} className="flex items-center justify-between p-2 rounded-lg bg-card border border-border">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-bold tabular-nums text-primary shrink-0">
-                            {subtask.scheduledTime}
-                          </span>
-                          <span className="text-sm truncate">{subtask.name}</span>
-                          {subtask.id && (
-                            <span className="text-[10px] text-muted-foreground shrink-0">saved</span>
-                          )}
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => removeSubtask(originalIndex)}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                </div>
-              )}
               {subtaskItems.length === 0 && (
                 <p className="text-xs text-muted-foreground">Add at least one subtask (name + time)</p>
               )}

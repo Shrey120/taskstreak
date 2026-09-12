@@ -116,10 +116,13 @@ export function characterStanding(avgLevel: number): string {
  * so throttling a daily habit's money growth silently cut the XP it earned.
  * The two are independent now: difficulty paces money, effort weight pays XP.
  */
+// Each of the five levels pays a genuinely distinct amount -- they used to
+// bucket into three tiers (1-2 both 100, 4-5 both 350), which made two of
+// the five buttons on the picker silently identical to their neighbour.
+const EFFORT_XP: Record<number, number> = { 1: 100, 2: 150, 3: 200, 4: 275, 5: 350 };
+
 export function baseXpForEffort(effortWeight: number): number {
-  if (effortWeight <= 2) return 100;   // light
-  if (effortWeight === 3) return 200;  // moderate
-  return 350;                          // heavy (4, 5)
+  return EFFORT_XP[effortWeight] ?? EFFORT_XP[3];
 }
 
 /**
