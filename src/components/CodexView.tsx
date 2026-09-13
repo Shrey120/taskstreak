@@ -318,6 +318,27 @@ export function CodexView() {
         </div>
       </section>
 
+      {/* Status Window */}
+      <section>
+        <SectionTitle icon={<Trophy className="h-3.5 w-3.5" />}>Status Window</SectionTitle>
+        <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4 text-sm">
+          <Block title="Opening it">
+            Tap the Level badge — top nav on desktop, the Level tile on the Timeline welcome
+            card on any device. Shows your Standing, Legacy rank, wallet, best streak and the
+            trait radar in one panel.
+          </Block>
+          <Block title="Level up / rank up">
+            A full-screen moment fires the instant a trait's level or your Legacy rank actually
+            increases — never on app load, never on a decrease. It only reacts to numbers the
+            rest of the app already computed; nothing about the celebration changes any reward.
+          </Block>
+          <Block title="Preview">
+            The Status Window has two preview buttons that fire the exact same moment on demand,
+            using your real current numbers projected one step forward — no progress is touched.
+          </Block>
+        </div>
+      </section>
+
       {/* Live level progress */}
       <section>
         <SectionTitle icon={<Trophy className="h-3.5 w-3.5" />}>Your level &amp; standing</SectionTitle>

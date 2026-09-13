@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TaskProvider } from '@/contexts/TaskContext';
+import { CelebrationProvider } from '@/contexts/CelebrationContext';
 import { CreateTaskDialog } from '@/components/CreateTaskDialog';
 import { PauseManager } from '@/components/PauseManager';
 import { ReportView } from '@/components/ReportView';
@@ -14,6 +15,9 @@ import { CodexView } from '@/components/CodexView';
 import { DailyProgressRing } from '@/components/DailyProgressRing';
 import { CompletionEffectLayer, useCompletionEffect } from '@/components/CompletionEffect';
 import { ReminderScheduler } from '@/components/ReminderScheduler';
+import { CelebrationWatcher } from '@/components/CelebrationWatcher';
+import { CelebrationOverlay } from '@/components/CelebrationOverlay';
+import { StatusWindow } from '@/components/StatusWindow';
 import { AppNavDrawer } from '@/components/AppNavDrawer';
 import { AppTopNav } from '@/components/AppTopNav';
 import { BottomNav } from '@/components/BottomNav';
@@ -28,6 +32,7 @@ function Dashboard() {
   const [view, setView] = useState<ViewType>('timeline');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [statusOpen, setStatusOpen] = useState(false);
   const { triggerCompletion, particles, showBanner, earnedAmount } = useCompletionEffect();
 
   const isMetric = view.startsWith('metric:');
@@ -81,7 +86,7 @@ function Dashboard() {
           </div>
         </header>
 
-        <AppTopNav view={view} onSelect={setView} />
+        <AppTopNav view={view} onSelect={setView} onOpenStatus={() => setStatusOpen(true)} />
 
         <main
           className={cn(
@@ -103,7 +108,7 @@ function Dashboard() {
             </div>
           )}
 
-          {view === 'timeline' && <WelcomeHero onNavigate={setView} />}
+          {view === 'timeline' && <WelcomeHero onNavigate={setView} onOpenStatus={() => setStatusOpen(true)} />}
 
           <div className="animate-fade-in">
             {view === 'timeline' && (
@@ -138,6 +143,8 @@ function Dashboard() {
           </Button>
         }
       />
+
+      <StatusWindow open={statusOpen} onOpenChange={setStatusOpen} />
 
       <BottomNav view={view} onSelect={setView} />
     </div>
@@ -188,8 +195,12 @@ function DateControls({
 export default function Index() {
   return (
     <TaskProvider>
-      <ReminderScheduler />
-      <Dashboard />
+      <CelebrationProvider>
+        <ReminderScheduler />
+        <CelebrationWatcher />
+        <CelebrationOverlay />
+        <Dashboard />
+      </CelebrationProvider>
     </TaskProvider>
   );
 }

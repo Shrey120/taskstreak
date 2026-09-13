@@ -8,6 +8,7 @@ import { Flame, Wallet, Trophy, ListChecks, ArrowDown } from 'lucide-react';
 
 interface WelcomeHeroProps {
   onNavigate: (view: ViewType) => void;
+  onOpenStatus: () => void;
 }
 
 /**
@@ -16,7 +17,7 @@ interface WelcomeHeroProps {
  * straight from context -- nothing computed specially for this component --
  * so it can never drift from what the rest of the app already believes.
  */
-export function WelcomeHero({ onNavigate }: WelcomeHeroProps) {
+export function WelcomeHero({ onNavigate, onOpenStatus }: WelcomeHeroProps) {
   const { user } = useAuth();
   const { tasks, wallet, traitXp, getAllTasksForDate, isTaskCompletedOnDate, getTasksForDate } = useTasks();
 
@@ -86,7 +87,7 @@ export function WelcomeHero({ onNavigate }: WelcomeHeroProps) {
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile icon={Flame} label="Best streak" value={String(bestStreak)} tone="text-primary" />
-        <StatTile icon={Trophy} label="Level" value={String(level)} tone="text-accent" />
+        <StatTile icon={Trophy} label="Level" value={String(level)} tone="text-accent" onClick={onOpenStatus} />
         <StatTile
           icon={Wallet}
           label="Wallet"
@@ -104,19 +105,30 @@ function StatTile({
   label,
   value,
   tone,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   tone: string;
+  /** Present only on the Level tile, to open the Status Window. */
+  onClick?: () => void;
 }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className="rounded-xl border border-border/50 bg-background/40 p-3.5">
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'rounded-xl border border-border/50 bg-background/40 p-3.5 text-left',
+        onClick && 'transition-colors hover:border-primary/50',
+      )}
+    >
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
         <Icon className={cn('h-3.5 w-3.5', tone)} />
         {label}
       </div>
       <div className={cn('mt-1.5 font-display text-xl font-bold tabular-nums', tone)}>{value}</div>
-    </div>
+    </Tag>
   );
 }

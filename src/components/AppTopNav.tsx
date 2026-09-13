@@ -11,6 +11,7 @@ import { Flame, LogOut, Plus, Sparkles, Wallet } from 'lucide-react';
 interface AppTopNavProps {
   view: ViewType;
   onSelect: (view: ViewType) => void;
+  onOpenStatus: () => void;
 }
 
 /**
@@ -22,7 +23,7 @@ interface AppTopNavProps {
  * Phones and tablets are untouched: they still get the hamburger drawer and
  * bottom tab bar from AppNavDrawer / BottomNav.
  */
-export function AppTopNav({ view, onSelect }: AppTopNavProps) {
+export function AppTopNav({ view, onSelect, onOpenStatus }: AppTopNavProps) {
   const { wallet, traitXp } = useTasks();
   const { user, logout } = useAuth();
   const totalXp = TRAITS.reduce((s, t) => s + (traitXp[t.id] || 0), 0);
@@ -73,14 +74,18 @@ export function AppTopNav({ view, onSelect }: AppTopNavProps) {
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex h-9 cursor-default items-center gap-1.5 rounded-lg border border-border/50 bg-card/60 px-2.5">
+            <button
+              type="button"
+              onClick={onOpenStatus}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-border/50 bg-card/60 px-2.5 transition-colors hover:border-primary/50"
+            >
               <Flame className={cn('h-4 w-4', level < 0 ? 'text-destructive' : 'text-primary')} />
               <span className={cn('text-[13px] font-bold tabular-nums', level < 0 ? 'text-destructive' : 'text-foreground')}>
                 {level}
               </span>
-            </div>
+            </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Level {level} · {totalXp.toLocaleString()} XP</TooltipContent>
+          <TooltipContent side="bottom">Level {level} · {totalXp.toLocaleString()} XP · open Status Window</TooltipContent>
         </Tooltip>
 
         <Tooltip>
