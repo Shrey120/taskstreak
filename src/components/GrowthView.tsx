@@ -1,6 +1,7 @@
 import { useTasks } from '@/contexts/TaskContext';
-import { TRAITS, levelForXp, standingTitle, characterStanding } from '@/lib/xpUtils';
+import { TRAITS, TraitId, levelForXp, standingTitle, characterStanding } from '@/lib/xpUtils';
 import { computeMaxWeeklyXp } from '@/lib/maxWeeklyXp';
+import { TraitRadarChart } from './TraitRadarChart';
 import { cn } from '@/lib/utils';
 import { Flame, TrendingDown, TrendingUp, Target } from 'lucide-react';
 import { format } from 'date-fns';
@@ -220,6 +221,21 @@ export function GrowthView() {
             </div>
           </>
         )}
+      </div>
+
+      {/* Trait balance radar */}
+      <div className="rounded-2xl border border-border/50 bg-card/80 p-5 shadow-card sm:p-6">
+        <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+          Trait balance
+        </div>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Shape, not just numbers — the ring at half radius is level zero. Tap a point for the exact level and XP.
+        </p>
+        <TraitRadarChart
+          levels={Object.fromEntries(rows.map((r) => [r.t.id, r.info.level])) as Record<TraitId, number>}
+          xp={Object.fromEntries(rows.map((r) => [r.t.id, r.xp])) as Record<TraitId, number>}
+          maxReach={maxReach}
+        />
       </div>
 
       {/* Per-trait detail cards */}
