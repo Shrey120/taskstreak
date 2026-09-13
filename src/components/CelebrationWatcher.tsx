@@ -12,7 +12,7 @@ import { buildLegacyStats, tierLabel } from '@/lib/legacy';
  */
 export function CelebrationWatcher() {
   const { traitXp, tasks, xpEvents } = useTasks();
-  const { celebrateLevelUp, celebrateRankUp } = useCelebration();
+  const { celebrateLevelUp, celebrateLevelDown, celebrateRankUp } = useCelebration();
 
   const prevLevels = useRef<Record<string, number> | null>(null);
   const prevTier = useRef<number | null>(null);
@@ -23,14 +23,15 @@ export function CelebrationWatcher() {
     for (const t of TRAITS) current[t.id] = levelForXp(traitXp[t.id] || 0).level;
 
     // First run after load establishes the baseline -- hydrating existing
-    // progress must never look like a level-up that just happened.
+    // progress must never look like a level-up (or level-down) that just
+    // happened.
     if (prevLevels.current) {
       for (const t of TRAITS) {
         const before = prevLevels.current[t.id];
         const after = current[t.id];
-        if (before !== undefined && after > before) {
-          celebrateLevelUp(t.id, before, after);
-        }
+        if (before === undefined || after === before) continue;
+        if (after > before) celebrateLevelUp(t.id, before, after);
+        else celebrateLevelDown(t.id, before, after);
       }
     }
     prevLevels.current = current;

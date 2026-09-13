@@ -327,14 +327,18 @@ export function CodexView() {
             card on any device. Shows your Standing, Legacy rank, wallet, best streak and the
             trait radar in one panel.
           </Block>
-          <Block title="Level up / rank up">
-            A full-screen moment fires the instant a trait's level or your Legacy rank actually
-            increases — never on app load, never on a decrease. It only reacts to numbers the
-            rest of the app already computed; nothing about the celebration changes any reward.
+          <Block title="Level up, level down, rank up">
+            A full-screen moment fires the instant a trait's level moves — up or down — or your
+            Legacy rank increases. Never on app load, never for a change that didn't really
+            happen. It only reacts to numbers the rest of the app already computed; nothing about
+            the moment itself changes any reward. A level DOWN is not a new penalty — a miss
+            already cost the XP; this just makes that existing, previously-silent consequence
+            visible, styled as a warning rather than a celebration.
           </Block>
           <Block title="Preview">
-            The Status Window has two preview buttons that fire the exact same moment on demand,
-            using your real current numbers projected one step forward — no progress is touched.
+            The Status Window has three preview buttons — level up, level down, rank up — that
+            fire the exact same moment on demand, using your real current numbers projected one
+            step forward. No progress is touched by any of them.
           </Block>
         </div>
       </section>

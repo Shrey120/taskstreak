@@ -285,6 +285,18 @@
   }
 }
 
+/* Red-tinted twin of pulse-glow, for the level-down warning. Uses the
+   --destructive token directly rather than a literal, so it follows the
+   theme like everything else rather than needing its own future edit. */
+@keyframes pulse-glow-danger {
+  0%, 100% {
+    box-shadow: 0 0 20px -5px hsl(var(--destructive) / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 35px -5px hsl(var(--destructive) / 0.6);
+  }
+}
+
 @keyframes coin-spin {
   0% { transform: rotateY(0deg); }
   100% { transform: rotateY(360deg); }
@@ -340,6 +352,10 @@
 
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow-danger {
+  animation: pulse-glow-danger 1.6s ease-in-out infinite;
 }
 
 .animate-coin {

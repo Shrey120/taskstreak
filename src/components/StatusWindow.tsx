@@ -22,7 +22,7 @@ interface StatusWindowProps {
 export function StatusWindow({ open, onOpenChange }: StatusWindowProps) {
   const { user } = useAuth();
   const { tasks, wallet, traitXp, xpEvents } = useTasks();
-  const { celebrateLevelUp, celebrateRankUp } = useCelebration();
+  const { celebrateLevelUp, celebrateLevelDown, celebrateRankUp } = useCelebration();
 
   const rows = TRAITS.map((t) => ({ t, xp: traitXp[t.id] || 0, info: levelForXp(traitXp[t.id] || 0) }));
   const totalLevel = rows.reduce((s, r) => s + r.info.level, 0);
@@ -35,6 +35,10 @@ export function StatusWindow({ open, onOpenChange }: StatusWindowProps) {
   const previewLevelUp = () => {
     if (!topTrait) return;
     celebrateLevelUp(topTrait.t.id, topTrait.info.level, topTrait.info.level + 1);
+  };
+  const previewLevelDown = () => {
+    if (!topTrait) return;
+    celebrateLevelDown(topTrait.t.id, topTrait.info.level, topTrait.info.level - 1);
   };
   const previewRankUp = () => {
     celebrateRankUp(legacy.rank.label, tierLabel(legacy.rank.tier + 1));
@@ -103,9 +107,18 @@ export function StatusWindow({ open, onOpenChange }: StatusWindowProps) {
               Won't level up or rank up for a while? Preview what the moment looks like —
               this doesn't touch your real progress.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={previewLevelUp} disabled={!topTrait}>
                 Preview level up
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={previewLevelDown}
+                disabled={!topTrait}
+              >
+                Preview level down
               </Button>
               <Button variant="outline" size="sm" className="flex-1" onClick={previewRankUp}>
                 Preview rank up
