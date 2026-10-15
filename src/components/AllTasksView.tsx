@@ -117,8 +117,12 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
 
       // Count broken streaks (streaksCompleted shows how many 7-day streaks completed)
       // We can estimate broken streaks from the difference between expected and current
-      // A simple heuristic: if currentStreak is 0 and there are completions, streak was broken
-      if (task.currentStreak === 0 && task.completions.length > 0) {
+      // A simple heuristic: if currentStreak is 0 and there are completions, streak was broken.
+      // A streak that just closed a cycle also wraps to 0 — that's a win, not a break.
+      const lastSuccess = task.completions
+        .filter((c) => c.earnedAmount > 0)
+        .reduce<typeof task.completions[number] | null>((a, c) => (!a || c.date > a.date ? c : a), null);
+      if (task.currentStreak === 0 && task.completions.length > 0 && !lastSuccess?.wasStreakBonus) {
         brokenStreaks++;
       }
     });
@@ -267,6 +271,12 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
     ? task.perMinuteRate > (task.baseAmount || task.perMinuteRate) 
     : task.amount > task.baseAmount;
   const incrementCount = task.streaksCompleted;
+  // A cycle closed today: the streak counter has wrapped to 0, and the raise
+  // either landed or is waiting on the rest of the day.
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const cycleClosedToday = task.completions.find(
+    (c) => c.date === todayStr && c.wasStreakBonus && c.earnedAmount > 0,
+  );
 
   // Calculate total earnings
   const totalEarnings = task.completions.reduce((sum, c) => sum + c.earnedAmount, 0);
@@ -407,7 +417,13 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
               D{task.difficulty} · {multiplier}x
             </div>
           )}
-          {task.currentStreak > 0 && hasCycle && (
+          {cycleClosedToday && task.currentStreak === 0 ? (
+            <div className={cn('text-xs', cycleClosedToday.raiseGranted ? 'text-success font-medium' : 'text-muted-foreground')}>
+              {cycleClosedToday.raiseGranted
+                ? `${cycleLength}/${cycleLength} · raised`
+                : `${cycleLength}/${cycleLength} · raise when day clears`}
+            </div>
+          ) : task.currentStreak > 0 && hasCycle && (
             <div className="text-xs text-muted-foreground">
               {task.currentStreak % cycleLength}/{cycleLength} to next
             </div>

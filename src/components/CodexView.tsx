@@ -133,9 +133,11 @@ export function CodexView() {
           <Block title="A raise must be earned by the whole day">
             The cycle only pays out if you cleared{' '}
             <span className="text-primary font-semibold">at least 80%</span> of everything due that
-            day. Finish one habit while the rest of the day rots and the cycle still counts, but the
-            raise does not land. One task can never run away from the others — the growth has no
-            ceiling, but it has to be earned broadly to keep compounding.
+            day. It doesn't matter when in the day the cycle closes: close it at lunch and the raise
+            waits, then lands the moment the day reaches 80%. Undo enough of the day to drop below
+            80% and the raise is taken back. Finish one habit while the rest of the day rots and the
+            cycle still counts, but the raise never lands. One task can never run away from the
+            others — the growth has no ceiling, but it has to be earned broadly to keep compounding.
           </Block>
           <Block title="Undo">
             Undoing a failure returns <B>exactly</B> what it took — the amount charged at the
