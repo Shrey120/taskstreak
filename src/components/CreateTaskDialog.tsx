@@ -547,7 +547,7 @@ export function CreateTaskDialog({ trigger }: CreateTaskDialogProps) {
                         <p>Difficulty 5 → 4x</p>
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Close a 7-completion cycle on a day you cleared to multiply the amount.
+                        Close a 7-completion cycle to multiply the amount.
                         Drives money only — XP comes from Effort below.
                       </p>
                     </TooltipContent>

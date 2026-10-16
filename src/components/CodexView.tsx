@@ -130,15 +130,6 @@ export function CodexView() {
             count rate <span className="text-primary font-semibold">+₹0.50 / min</span>.
             No ceiling — this compounds for as long as you keep closing cycles.
           </Block>
-          <Block title="A raise must be earned by the whole day">
-            The cycle only pays out if you cleared{' '}
-            <span className="text-primary font-semibold">at least 80%</span> of everything due that
-            day. It doesn't matter when in the day the cycle closes: close it at lunch and the raise
-            waits, then lands the moment the day reaches 80%. Undo enough of the day to drop below
-            80% and the raise is taken back. Finish one habit while the rest of the day rots and the
-            cycle still counts, but the raise never lands. One task can never run away from the
-            others — the growth has no ceiling, but it has to be earned broadly to keep compounding.
-          </Block>
           <Block title="Undo">
             Undoing a failure returns <B>exactly</B> what it took — the amount charged at the
             time, not the task's amount today, and the XP is handed back too. Legacy is untouched
@@ -241,8 +232,7 @@ export function CodexView() {
           </Block>
           <Block title="How it affects the numbers">
             Paused days are removed from the denominator everywhere — they are not misses. The
-            Report counts them separately and excludes them from consistency, and a raise cannot
-            be earned on a paused day because there was nothing due to clear.
+            Report counts them separately and excludes them from consistency.
           </Block>
           <Block title="Skip vs. fail vs. pause">
             <B>Skip</B> marks one task streak-neutral for one day — for a quota task you will
@@ -268,7 +258,7 @@ export function CodexView() {
           </Block>
           <Block title="Skip / day-off">
             Marks a day streak-neutral: no penalty, no streak impact, and it is removed from
-            the day's due count — so skipping cannot block a raise. See Vacation &amp; pauses above
+            the day's due count. See Vacation &amp; pauses above
             for how it differs from failing.
           </Block>
         </div>

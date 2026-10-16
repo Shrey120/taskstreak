@@ -139,15 +139,6 @@ async function fetchPauseRanges(deviceId: string): Promise<PauseRange[]> {
   return data.map((r) => ({ id: r.id, start: r.start_date, end: r.end_date, label: r.label ?? undefined }));
 }
 
-/** Share of a day's due tasks that must be done for that day to grant a raise. */
-const CLEAR_THRESHOLD = 0.8;
-
-/**
- * How far back a pending raise can still be granted or taken back. Older days
- * are settled for good, so editing the schedule later can't rewrite old pay.
- */
-const RAISE_SETTLE_DAYS = 7;
-
 /**
  * Pay after granting (+1) or taking back (-1) one cycle raise. Fixed pay is
  * rebuilt from the base amount rather than multiplied/divided in place, so it
@@ -577,109 +568,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const dateKey = (d: Date) => format(d, 'yyyy-MM-dd');
 
-  /**
-   * Did this day's schedule actually get cleared? `justCompletedId` counts as
-   * done because this runs mid-completion, before state has committed.
-   *
-   * Flexible at-least-N tasks are ignored: they have no fixed due day, so
-   * they can neither block nor grant a raise.
-   */
-  const scheduleClearedOn = (date: Date, justCompletedId?: string): boolean => {
-    const dateStr = dateKey(date);
-    if (isPausedOn(pauseRanges, dateStr)) return false;
-
-    let due = 0;
-    let done = 0;
-    for (const t of tasks) {
-      if (t.frequencyType === 'at-least-weekly' || t.frequencyType === 'at-least-monthly') continue;
-      if (!isTaskDueOn(t, date)) continue;
-      if (dayOffSet.has(`${t.id}|${dateStr}`)) continue;
-      due++;
-      if (t.id === justCompletedId) { done++; continue; }
-      if (t.completions.some((c) => c.date === dateStr && c.earnedAmount > 0)) done++;
-    }
-    if (due === 0) return true;
-    return done / due >= CLEAR_THRESHOLD;
-  };
-
-  /**
-   * Keep every recent cycle-closing completion's raise in step with whether
-   * its day is cleared. A cycle often closes early in the day (lunch at 3pm)
-   * long before the rest of the schedule is done, so checking only at that
-   * tick meant early tasks could never be raised. This grants the raise as
-   * soon as the day clears, and takes it back if an undo, failure or skip
-   * un-clears it. Idempotent: once flags match, it does nothing.
-   */
-  useEffect(() => {
-    if (loading || !deviceId) return;
-    const horizon = format(
-      new Date(Date.now() - RAISE_SETTLE_DAYS * 24 * 60 * 60 * 1000),
-      'yyyy-MM-dd',
-    );
-    const clearedByDate = new Map<string, boolean>();
-    const flips = new Map<string, { date: string; grant: boolean }[]>();
-    for (const t of tasks) {
-      for (const c of t.completions) {
-        if (!c.wasStreakBonus || c.earnedAmount <= 0 || c.date < horizon) continue;
-        let cleared = clearedByDate.get(c.date);
-        if (cleared === undefined) {
-          cleared = scheduleClearedOn(new Date(c.date + 'T12:00:00'));
-          clearedByDate.set(c.date, cleared);
-        }
-        if (cleared === !!c.raiseGranted) continue;
-        if (!flips.has(t.id)) flips.set(t.id, []);
-        flips.get(t.id)!.push({ date: c.date, grant: cleared });
-      }
-    }
-    if (flips.size === 0) return;
-
-    // Applies the flips to a task, skipping any already applied, so running
-    // it on a newer `prev` can never grant or revoke twice.
-    const applyFlips = (t: Task): Task => {
-      const list = flips.get(t.id);
-      if (!list) return t;
-      let next = t;
-      for (const { date, grant } of list) {
-        const c = next.completions.find((x) => x.date === date);
-        if (!c || !!c.raiseGranted === grant) continue;
-        next = {
-          ...next,
-          ...raiseStep(next, grant ? 1 : -1),
-          completions: next.completions.map((x) =>
-            x.date === date ? { ...x, raiseGranted: grant } : x,
-          ),
-        };
-      }
-      return next;
-    };
-
-    setTasks((prev) => prev.map(applyFlips));
-
-    const writes: PromiseLike<unknown>[] = [];
-    for (const t of tasks) {
-      if (!flips.has(t.id)) continue;
-      const next = applyFlips(t);
-      writes.push(
-        supabase.from('tasks').update({
-          amount: next.amount,
-          per_minute_rate: next.perMinuteRate,
-          streaks_completed: next.streaksCompleted,
-        }).eq('id', t.id),
-      );
-      for (const { date, grant } of flips.get(t.id)!) {
-        writes.push(
-          supabase.from('task_completions')
-            .update({ raise_granted: grant })
-            .eq('task_id', t.id)
-            .eq('completed_date', date),
-        );
-      }
-    }
-    Promise.all(writes).catch((err) => console.error('Error settling raises:', err));
-    // scheduleClearedOn reads tasks, dayOffSet and pauseRanges.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, dayOffSet, pauseRanges, loading, deviceId]);
-
   /** Due by the task's own schedule, and not inside a vacation window. */
   const isTaskDueOnDate = (task: Task, date: Date) => {
     if (isPausedOn(pauseRanges, dateKey(date))) return false;
@@ -807,14 +695,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const newStreak = baseStreak + 1;
     const isWeeklyStreakComplete = newStreak === cycleLength;
 
-    // A raise is earned by the whole day, not by one task. Without this the
-    // multiplier compounds on a single habit while everything else rots —
-    // `streaksCompleted` is per-task and knows nothing about the rest of the
-    // schedule. Clearing the day is what unlocks the raise. If the day isn't
-    // cleared yet, the raise stays pending and `settlePendingRaises` grants
-    // it the moment the rest of the day gets done.
-    const dayCleared = scheduleClearedOn(date, taskId);
-    const grantsRaise = isWeeklyStreakComplete && dayCleared;
+    // Every closed 7-cycle raises the pay by the task's own difficulty setting.
+    const grantsRaise = isWeeklyStreakComplete;
 
     let earnedAmount: number;
     let newTaskAmount = task.amount;

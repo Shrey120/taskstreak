@@ -271,8 +271,7 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
     ? task.perMinuteRate > (task.baseAmount || task.perMinuteRate) 
     : task.amount > task.baseAmount;
   const incrementCount = task.streaksCompleted;
-  // A cycle closed today: the streak counter has wrapped to 0, and the raise
-  // either landed or is waiting on the rest of the day.
+  // A cycle closed today: the streak counter has wrapped to 0 and the raise landed.
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const cycleClosedToday = task.completions.find(
     (c) => c.date === todayStr && c.wasStreakBonus && c.earnedAmount > 0,
@@ -418,10 +417,8 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
             </div>
           )}
           {cycleClosedToday && task.currentStreak === 0 ? (
-            <div className={cn('text-xs', cycleClosedToday.raiseGranted ? 'text-success font-medium' : 'text-muted-foreground')}>
-              {cycleClosedToday.raiseGranted
-                ? `${cycleLength}/${cycleLength} · raised`
-                : `${cycleLength}/${cycleLength} · raise when day clears`}
+            <div className="text-xs text-success font-medium">
+              {cycleLength}/{cycleLength} · raised
             </div>
           ) : task.currentStreak > 0 && hasCycle && (
             <div className="text-xs text-muted-foreground">

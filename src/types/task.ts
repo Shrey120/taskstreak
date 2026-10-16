@@ -41,10 +41,8 @@ export interface TaskCompletion {
   /** This completion closed a 7-cycle. Says nothing about whether pay rose. */
   wasStreakBonus: boolean;
   /**
-   * The cycle's pay raise has actually been applied to the task. It lands
-   * when the day is cleared, which can be well after the cycle-closing tick,
-   * and is taken back if the day stops being cleared. Undo only reverses a
-   * raise when this is true.
+   * The cycle's pay raise was applied to the task. Every cycle close grants
+   * one now; older rows may be false. Undo only reverses a raise when true.
    */
   raiseGranted?: boolean;
   /**
