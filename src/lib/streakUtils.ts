@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { Task } from '@/types/task';
-import { isTaskDueOn, getAtLeastConfig } from '@/lib/schedule';
+import { isTaskDueOn, getAtLeastConfig, isPausedOn, PauseRange } from '@/lib/schedule';
+import { periodRange, fromKey, toKey } from '@/lib/periodUtils';
 
 /**
  * How many consecutive successful completions make up one full "streak cycle"
@@ -73,12 +74,49 @@ function prevMonthKey(monthKey: string): string {
   return `${String(prevY).padStart(4, '0')}-${String(prevM).padStart(2, '0')}`;
 }
 
+/** Inclusive [start, end] of a period identified by its week/month key. */
+function periodBounds(key: string, unit: 'week' | 'month'): [string, string] {
+  return periodRange(unit === 'week' ? key : `${key}-01`, unit);
+}
+
+/**
+ * Days in [start, end] the task could actually be done on: on or after its
+ * start date, not one of its excluded weekdays, and not inside a pause.
+ */
+function availableDaysIn(
+  task: Task,
+  start: string,
+  end: string,
+  excludedDays: number[],
+  pauseRanges: PauseRange[],
+): string[] {
+  const out: string[] = [];
+  const cursor = fromKey(start);
+  for (let i = 0; i < 40; i++) {
+    const key = toKey(cursor);
+    if (key > end) break;
+    if (
+      key >= task.startDate &&
+      !excludedDays.includes(cursor.getDay()) &&
+      !isPausedOn(pauseRanges, key)
+    ) {
+      out.push(key);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
 /**
  * Compute the RAW (pre-cycle-modulo) streak for an at-least-N-per-period task
  * anchored at `anchorDateStr`. Includes all successes in the anchor's period,
  * then walks backward one period at a time: each fully-elapsed prior period
  * contributes its successes only if it met the quota. The first prior period
  * that failed to meet quota terminates the walk.
+ *
+ * Paused days aren't available, so a period's quota is capped at the days
+ * that were actually available; a period that was entirely paused is
+ * neutral (neither breaks the chain nor adds to it).
  *
  * Pass successDates WITHOUT the anchor completion when computing the pre-
  * increment base for a NEW completion; pass all successDates when recomputing
@@ -89,8 +127,9 @@ export function computeAtLeastRawStreak(
   successDates: string[],
   anchorDateStr: string,
   unit: 'week' | 'month',
+  pauseRanges: PauseRange[] = [],
 ): number {
-  const { quota } = getAtLeastConfig(task.frequencyValue);
+  const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
   const getKey = unit === 'week' ? getWeekKey : getMonthKey;
   const prevKey = unit === 'week' ? prevWeekKey : prevMonthKey;
 
@@ -106,13 +145,47 @@ export function computeAtLeastRawStreak(
   let cursor = prevKey(anchorKey);
   // Safety cap ~10 years of weekly walks / months.
   for (let i = 0; i < 600; i++) {
+    const [start, end] = periodBounds(cursor, unit);
+    if (end < task.startDate) break; // before the task existed
+    const available = availableDaysIn(task, start, end, excludedDays, pauseRanges).length;
+    const needed = Math.min(quota, available);
     const cnt = byPeriod.get(cursor) || 0;
-    if (cnt < quota) break; // fully-elapsed prior period failed to meet quota
+    if (needed > 0 && cnt < needed) break; // fully-elapsed prior period missed quota
     total += cnt;
     cursor = prevKey(cursor);
   }
 
   return total;
+}
+
+/**
+ * Can the period containing `todayStr` still reach its quota? Counts what's
+ * already done plus the days still open (today onward, not yet failed or
+ * skipped). Without this, a week that was already lost kept showing a live
+ * streak until it ended -- fail every day and the flame stayed lit.
+ */
+function currentPeriodStillReachable(
+  task: Task,
+  completions: { date: string; earnedAmount: number }[],
+  todayStr: string,
+  unit: 'week' | 'month',
+  excluded: Set<string>,
+  pauseRanges: PauseRange[],
+): boolean {
+  const { quota, excludedDays } = getAtLeastConfig(task.frequencyValue);
+  const [start, end] = periodRange(todayStr, unit);
+  const available = availableDaysIn(task, start, end, excludedDays, pauseRanges);
+  const needed = Math.min(quota, available.length);
+  if (needed === 0) return true;
+
+  const resolved = new Set(completions.map((c) => c.date));
+  const done = completions.filter(
+    (c) => c.earnedAmount > 0 && c.date >= start && c.date <= end,
+  ).length;
+  const open = available.filter(
+    (d) => d >= todayStr && !resolved.has(d) && !excluded.has(d),
+  ).length;
+  return done + open >= needed;
 }
 
 function countRunLength(
@@ -160,6 +233,7 @@ export function computeCurrentStreak(
   completions: { date: string; earnedAmount: number }[],
   todayStr: string,
   excludedDates?: Set<string> | Iterable<string>,
+  pauseRanges: PauseRange[] = [],
 ): number {
   const successDates = completions.filter((c) => c.earnedAmount > 0).map((c) => c.date);
   if (successDates.length === 0) return 0;
@@ -173,8 +247,10 @@ export function computeCurrentStreak(
   if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') {
     const unit: 'week' | 'month' =
       task.frequencyType === 'at-least-weekly' ? 'week' : 'month';
-    const latest = [...successDates].sort().reverse()[0];
-    const raw = computeAtLeastRawStreak(task, successDates, latest, unit);
+    // Anchored at today, not at the last success: a period that ended below
+    // quota after the last success has already broken the streak.
+    if (!currentPeriodStillReachable(task, completions, todayStr, unit, excluded, pauseRanges)) return 0;
+    const raw = computeAtLeastRawStreak(task, successDates, todayStr, unit, pauseRanges);
     if (!Number.isFinite(cycleLength) || cycleLength <= 0) return raw;
     return raw % cycleLength;
   }

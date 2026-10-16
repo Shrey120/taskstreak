@@ -433,7 +433,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           const cleanExcluded = new Set<string>();
           for (const d of excluded) if (!successDates.has(d)) cleanExcluded.add(d);
           for (const d of pausedDays) if (!successDates.has(d)) cleanExcluded.add(d);
-          const correctStreak = computeCurrentStreak(task, task.completions, todayStr, cleanExcluded);
+          const correctStreak = computeCurrentStreak(task, task.completions, todayStr, cleanExcluded, storedPauses);
           if (correctStreak !== task.currentStreak) {
             console.log(`Fixing streak for "${task.name}": ${task.currentStreak} → ${correctStreak}`);
             supabase.from('tasks').update({ current_streak: correctStreak }).eq('id', task.id);
@@ -681,21 +681,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   }, [tasks, dayOffSet, pauseRanges, loading, deviceId]);
 
   /** Due by the task's own schedule, and not inside a vacation window. */
-  const isTaskDueOnDate =(task: Task, date: Date) => {
+  const isTaskDueOnDate = (task: Task, date: Date) => {
     if (isPausedOn(pauseRanges, dateKey(date))) return false;
     return isTaskDueOn(task, date);
-  };
-
-  const findPreviousDueDate = (task: Task, date: Date): string | null => {
-    // Look back up to a year; weekly/monthly/specific-day will find much sooner.
-    for (let i = 1; i <= 366; i++) {
-      const d = new Date(date);
-      d.setDate(d.getDate() - i);
-      const key = dateKey(d);
-      if (key < task.startDate) return null;
-      if (isTaskDueOnDate(task, d)) return key;
-    }
-    return null;
   };
 
   const addTask = async (taskData: Omit<Task, 'id' | 'createdAt' | 'completions' | 'currentStreak' | 'streaksCompleted' | 'streakBrokenThisWeek'>) => {
@@ -802,21 +790,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const priorSuccessDates = task.completions
         .filter((c) => c.earnedAmount > 0 && c.date !== dateStr)
         .map((c) => c.date);
-      const rawBase = computeAtLeastRawStreak(task, priorSuccessDates, dateStr, unit);
+      const rawBase = computeAtLeastRawStreak(task, priorSuccessDates, dateStr, unit, pauseRanges);
       baseStreak = Number.isFinite(cycleLength) && cycleLength > 0
         ? rawBase % cycleLength
         : rawBase;
     } else {
-      // Fixed-schedule tasks: streak breaks if the previous scheduled
-      // occurrence was missed.
-      baseStreak = task.currentStreak;
-      const prevDueDateStr = findPreviousDueDate(task, date);
-      if (prevDueDateStr) {
-        const prevWasCompleted = task.completions.some(
-          (c) => c.date === prevDueDateStr && c.earnedAmount > 0
-        );
-        if (!prevWasCompleted) baseStreak = 0;
-      }
+      // Fixed-schedule tasks: rebuild the run that ends just before this date
+      // from history. The stored `currentStreak` can't be trusted here: when
+      // yesterday is still unticked, the on-load repair has already dropped
+      // it to 0, so ticking yesterday the next morning restarted the streak
+      // at 1 (Dinner went 7 days straight and showed 1).
+      const prior = task.completions.filter((c) => c.date < dateStr);
+      baseStreak = computeCurrentStreak(task, prior, dateStr, excludedDatesFor(task, prior), pauseRanges);
     }
 
     const newStreak = baseStreak + 1;
@@ -952,6 +937,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       remainingCompletions,
       todayStr,
       excludedDatesFor(task, remainingCompletions),
+      pauseRanges,
     );
 
     const newWalletBalance = wallet - completion.earnedAmount;
@@ -1148,6 +1134,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       completionsWithoutSkip,
       format(new Date(), 'yyyy-MM-dd'),
       excludedDatesFor(task, completionsWithoutSkip),
+      pauseRanges,
     );
 
     // Optimistic UI update
@@ -1589,6 +1576,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           remaining,
           format(new Date(), 'yyyy-MM-dd'),
           excludedDatesFor(parentTask, remaining),
+          pauseRanges,
         );
         setTasks((prev) =>
           prev.map((t) =>

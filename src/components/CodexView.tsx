@@ -210,7 +210,8 @@ export function CodexView() {
           <Block title="At least N per week / month">
             A quota, not fixed days. Do it on any days you like; once the quota is met the task{' '}
             <span className="text-primary font-semibold">disappears for the rest of that period</span>{' '}
-            instead of nagging. Only missing a whole period's quota breaks the streak. Optionally
+            instead of nagging. Missing a period's quota breaks the streak — and it breaks as soon
+            as the quota can no longer be reached that period, not only when the period ends. Optionally
             exclude specific days — "5 days a week, excluding Sunday" means 5 of the{' '}
             <span className="text-primary font-semibold">6 remaining</span> days, not 5 of 7. An
             excluded day never shows up, never counts toward the quota, and never counts against
@@ -263,7 +264,7 @@ export function CodexView() {
             The streak counts consecutive due occurrences. Missing a due day resets it to 0.
           </Block>
           <Block title="Flexible (at-least N / week or month)">
-            The streak is period-based: a period counts if you hit its quota. Completing on non-consecutive days is fine — only missing the quota for a whole elapsed period breaks it.
+            The streak is period-based: a period counts if you hit its quota. Completing on non-consecutive days is fine. The streak drops to 0 the moment what you've done plus the days still open can't reach the quota. Paused days don't count as available, so a sick week lowers that week's quota instead of breaking it, and a fully paused week is skipped over.
           </Block>
           <Block title="Skip / day-off">
             Marks a day streak-neutral: no penalty, no streak impact, and it is removed from
