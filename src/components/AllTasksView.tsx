@@ -2,13 +2,14 @@ import { useState, useMemo } from 'react';
 import { useTasks } from '@/contexts/TaskContext';
 import { Task, DIFFICULTY_MULTIPLIERS, DAY_LABELS, DAYS_OF_WEEK } from '@/types/task';
 import { Button } from '@/components/ui/button';
-import { Trash2, Flame, TrendingUp, Zap, Award, Pencil, Clock, DollarSign, BarChart3, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown, TrendingDown, AlertTriangle } from 'lucide-react';
+import { Trash2, Flame, TrendingUp, Zap, Award, Pencil, Clock, DollarSign, BarChart3, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown, TrendingDown, AlertTriangle, Pause, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EditTaskDialog } from './EditTaskDialog';
+import { TaskPauseDialog } from './TaskPauseDialog';
 import { ConfirmDeleteTask } from './ConfirmDeleteTask';
-import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual } from 'date-fns';
+import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter, isBefore, isEqual, addDays } from 'date-fns';
 import { getStreakCycleLength } from '@/lib/streakUtils';
-import { isEveryNWeeksValue, isTaskDueOn, isPausedOn, getAtLeastConfig } from '@/lib/schedule';
+import { isEveryNWeeksValue, isTaskDueOn, isPausedOn, getAtLeastConfig, taskPauseOn, OPEN_END } from '@/lib/schedule';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,8 @@ import {
 type SortOption = 'none' | 'money-asc' | 'money-desc';
 
 export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) => void } = {}) {
-  const { tasks, deleteTask, pauseRanges, dayOffSet } = useTasks();
+  const { tasks, deleteTask, pausesFor, dayOffSet } = useTasks();
+  const [pausingTask, setPausingTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [analyticsTask, setAnalyticsTask] = useState<Task | null>(null);
@@ -104,7 +106,7 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
         // A skipped or paused day was never a real obligation -- it cost
         // nothing when it happened, so it should not read as a loss here.
         if (dayOffSet.has(`${task.id}|${dateStr}`)) return;
-        if (isPausedOn(pauseRanges, dateStr)) return;
+        if (isPausedOn(pausesFor(task.id), dateStr)) return;
         if (!isTaskDueOn(task, date)) return;
 
         // Missed this day - add potential earnings to lost
@@ -222,6 +224,7 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
               onDelete={() => setDeletingTask(task)}
               onEdit={() => handleEdit(task)}
               onViewAnalytics={() => setAnalyticsTask(task)}
+              onPause={() => setPausingTask(task)}
               onOpen={onSelectHabit ? () => onSelectHabit(task) : undefined}
               getFrequencyLabel={getFrequencyLabel} 
             />
@@ -233,6 +236,12 @@ export function AllTasksView({ onSelectHabit }: { onSelectHabit?: (task: Task) =
         task={editingTask} 
         open={editDialogOpen} 
         onOpenChange={setEditDialogOpen} 
+      />
+
+      <TaskPauseDialog
+        task={pausingTask}
+        open={!!pausingTask}
+        onOpenChange={(open) => !open && setPausingTask(null)}
       />
 
       <TaskAnalyticsDialog
@@ -259,11 +268,13 @@ interface TaskDetailCardProps {
   onDelete: () => void;
   onEdit: () => void;
   onViewAnalytics: () => void;
+  onPause: () => void;
   onOpen?: () => void;
   getFrequencyLabel: (task: Task) => string;
 }
 
-function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFrequencyLabel }: TaskDetailCardProps) {
+function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onPause, onOpen, getFrequencyLabel }: TaskDetailCardProps) {
+  const { taskPauses, resumeTask } = useTasks();
   const multiplier = DIFFICULTY_MULTIPLIERS[task.difficulty];
   const cycleLength = getStreakCycleLength(task);
   const hasCycle = Number.isFinite(cycleLength) && cycleLength > 0;
@@ -276,12 +287,22 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
   const cycleClosedToday = task.completions.find(
     (c) => c.date === todayStr && c.wasStreakBonus && c.earnedAmount > 0,
   );
+  const activePause = taskPauseOn(taskPauses, task.id, todayStr);
+  const nextPause = activePause
+    ? undefined
+    : taskPauses
+        .filter((r) => r.taskId === task.id && r.start > todayStr)
+        .sort((a, b) => a.start.localeCompare(b.start))[0];
+  const prettyDay = (key: string) => format(new Date(`${key}T12:00:00`), 'd MMM');
 
   // Calculate total earnings
   const totalEarnings = task.completions.reduce((sum, c) => sum + c.earnedAmount, 0);
 
   return (
-    <div className="relative p-4 rounded-xl bg-card border border-border shadow-card transition-colors duration-200 hover:border-primary/30 group">
+    <div className={cn(
+      'relative p-4 rounded-xl bg-card border border-border shadow-card transition-colors duration-200 hover:border-primary/30 group',
+      activePause && 'border-dashed',
+    )}>
       <div className="space-y-3">
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
@@ -312,6 +333,12 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
                   Hourly
                 </span>
               )}
+              {activePause && (
+                <span className="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
+                  <Pause className="w-2.5 h-2.5" />
+                  Paused
+                </span>
+              )}
               {task.currentStreak > 0 && (
                 <span className="flex items-center gap-1 rounded-full gradient-primary px-1.5 py-px text-[10px] font-bold tabular-nums text-primary-foreground">
                   <Flame className="w-2.5 h-2.5" />
@@ -339,6 +366,21 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
             <Button
               size="icon"
               variant="ghost"
+              onClick={onPause}
+              aria-label={activePause ? 'Paused — resume or change' : 'Pause task'}
+              title={activePause ? 'Paused — resume or change' : 'Pause task'}
+              className={cn(
+                'h-9 w-9 rounded-full transition-opacity hover:text-primary',
+                activePause
+                  ? 'text-primary'
+                  : 'text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100',
+              )}
+            >
+              <Pause className="w-4 h-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
               onClick={onEdit}
               aria-label="Edit task"
               title="Edit task"
@@ -358,6 +400,27 @@ function TaskDetailCard({ task, onDelete, onEdit, onViewAnalytics, onOpen, getFr
             </Button>
           </div>
         </div>
+
+        {activePause && (
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/50 p-2">
+            <Pause className="w-4 h-4 shrink-0 text-muted-foreground" />
+            <p className="flex-1 min-w-0 text-xs text-muted-foreground">
+              Paused since {prettyDay(activePause.start)},{' '}
+              {activePause.end === OPEN_END ? 'until you resume' : `back on ${format(addDays(new Date(`${activePause.end}T12:00:00`), 1), 'd MMM')}`}.
+              {' '}Streak, pay and XP are frozen.
+            </p>
+            <Button size="sm" variant="outline" className="h-8 gap-1 shrink-0" onClick={() => resumeTask(task.id)}>
+              <Play className="w-3.5 h-3.5" />
+              Resume
+            </Button>
+          </div>
+        )}
+        {nextPause && (
+          <p className="text-xs text-muted-foreground">
+            Pauses from {prettyDay(nextPause.start)}
+            {nextPause.end === OPEN_END ? ' until you resume' : ` to ${prettyDay(nextPause.end)}`}.
+          </p>
+        )}
 
         {/* Total Earnings */}
         <div className="flex items-center gap-2 p-2 rounded-lg bg-accent/10 border border-accent/20">

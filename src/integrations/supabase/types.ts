@@ -93,9 +93,9 @@ export type Database = {
         Relationships: []
       }
       pause_ranges: {
-        Row: { created_at: string; device_id: string; end_date: string; id: string; label: string | null; start_date: string }
-        Insert: { created_at?: string; device_id: string; end_date: string; id?: string; label?: string | null; start_date: string }
-        Update: { created_at?: string; device_id?: string; end_date?: string; id?: string; label?: string | null; start_date?: string }
+        Row: { created_at: string; device_id: string; end_date: string | null; id: string; label: string | null; start_date: string; task_id: string | null }
+        Insert: { created_at?: string; device_id: string; end_date?: string | null; id?: string; label?: string | null; start_date: string; task_id?: string | null }
+        Update: { created_at?: string; device_id?: string; end_date?: string | null; id?: string; label?: string | null; start_date?: string; task_id?: string | null }
         Relationships: []
       }
       stack_items: {

@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
 import { getStreakCycleLength, computeCurrentStreak, computeAtLeastRawStreak } from '@/lib/streakUtils';
 import { periodUnitFor, successesInPeriod } from '@/lib/periodUtils';
-import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange, getAtLeastConfig } from '@/lib/schedule';
+import { isTaskDueOn, isPausedOn, pausedDatesIn, normalizeFrequency, PauseRange, getAtLeastConfig, OPEN_END, pausesForTask } from '@/lib/schedule';
 import {
   TraitId, TRAITS, isTraitId, baseXpForEffort, baseXpForCompletion,
 } from '@/lib/xpUtils';
@@ -62,6 +62,14 @@ interface TaskContextType {
   addPause: (start: string, end: string, label?: string) => void;
   removePause: (id: string) => void;
   isPausedDate: (date: Date) => boolean;
+  /** Pauses that apply to a single task only (see pausesFor). */
+  taskPauses: PauseRange[];
+  /** Whole-app vacations plus this task's own pauses. */
+  pausesFor: (taskId: string) => PauseRange[];
+  /** Pause one task from `start`; `end` null = until resumed. */
+  pauseTask: (taskId: string, start: string, end: string | null) => Promise<void>;
+  /** End the task's current pause so it's active again from today. */
+  resumeTask: (taskId: string) => Promise<void>;
   traitXp: Record<TraitId, number>;
   xpEvents: XpEvent[];
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'completions' | 'currentStreak' | 'streaksCompleted' | 'streakBrokenThisWeek'>) => Promise<void>;
@@ -128,15 +136,28 @@ async function fetchMissedSet(deviceId: string): Promise<Set<string>> {
   return new Set(data.map((r) => `${r.subtask_id}|${r.missed_date}`));
 }
 
-async function fetchPauseRanges(deviceId: string): Promise<PauseRange[]> {
-  if (!deviceId) return [];
+const toPauseRange = (r: { id: string; start_date: string; end_date: string | null; label: string | null; task_id?: string | null }): PauseRange => ({
+  id: r.id,
+  start: r.start_date,
+  end: r.end_date ?? OPEN_END,
+  label: r.label ?? undefined,
+  taskId: r.task_id ?? undefined,
+});
+
+/** Whole-app vacations and single-task pauses, split. */
+async function fetchPauseRanges(deviceId: string): Promise<{ vacations: PauseRange[]; taskPauses: PauseRange[] }> {
+  if (!deviceId) return { vacations: [], taskPauses: [] };
   const { data, error } = await supabase
     .from('pause_ranges')
-    .select('id, start_date, end_date, label')
+    .select('id, start_date, end_date, label, task_id')
     .eq('device_id', deviceId)
     .order('start_date', { ascending: true });
-  if (error || !data) return [];
-  return data.map((r) => ({ id: r.id, start: r.start_date, end: r.end_date, label: r.label ?? undefined }));
+  if (error || !data) return { vacations: [], taskPauses: [] };
+  const all = data.map(toPauseRange);
+  return {
+    vacations: all.filter((r) => !r.taskId),
+    taskPauses: all.filter((r) => r.taskId),
+  };
 }
 
 /**
@@ -176,6 +197,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Vacation / pause windows. Every task is off the hook inside these, so a
   // paused day neither breaks a streak nor demands a completion.
   const [pauseRanges, setPauseRanges] = useState<PauseRange[]>([]);
+  // Pauses on single tasks (eggs during a festival, gym for a month). Same
+  // rules as a vacation, but only for that one task.
+  const [taskPauses, setTaskPauses] = useState<PauseRange[]>([]);
   // XP totals per trait + audit event log
   const [traitXp, setTraitXp] = useState<Record<TraitId, number>>({ ...EMPTY_TRAIT_XP });
   const [xpEvents, setXpEvents] = useState<XpEvent[]>([]);
@@ -200,11 +224,75 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   };
 
   const removePause = async (id: string) => {
+    const removedTaskId = taskPauses.find((r) => r.id === id)?.taskId;
     setPauseRanges((prev) => prev.filter((r) => r.id !== id));
+    const nextTaskPauses = taskPauses.filter((r) => r.id !== id);
+    setTaskPauses(nextTaskPauses);
     await supabase.from('pause_ranges').delete().eq('id', id);
+    if (removedTaskId) refreshStreakAfterPauseChange(removedTaskId, nextTaskPauses);
   };
 
   const isPausedDate = (date: Date) => isPausedOn(pauseRanges, format(date, 'yyyy-MM-dd'));
+
+  const pausesFor = (taskId: string, own: PauseRange[] = taskPauses) =>
+    pausesForTask(pauseRanges, own, taskId);
+
+  /**
+   * Re-derive one task's streak after its pauses changed. Nothing else needs
+   * touching: a pause never writes completions, pay or XP, so the task comes
+   * back exactly as it was -- this only matters when a pause now covers (or
+   * no longer covers) a day that was left unticked.
+   */
+  const refreshStreakAfterPauseChange = (taskId: string, nextTaskPauses: PauseRange[]) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const pauses = pausesFor(taskId, nextTaskPauses);
+    const streak = computeCurrentStreak(
+      task,
+      task.completions,
+      format(new Date(), 'yyyy-MM-dd'),
+      excludedDatesFor(task, undefined, pauses),
+      pauses,
+    );
+    if (streak === task.currentStreak) return;
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, currentStreak: streak } : t)));
+    supabase.from('tasks').update({ current_streak: streak }).eq('id', taskId)
+      .then(({ error }) => { if (error) console.error('Error updating streak after pause:', error); });
+  };
+
+  const pauseTask = async (taskId: string, start: string, end: string | null) => {
+    if (!deviceId) return;
+    const { data, error } = await supabase
+      .from('pause_ranges')
+      .insert({ device_id: deviceId, task_id: taskId, start_date: start, end_date: end })
+      .select('id, start_date, end_date, label, task_id')
+      .single();
+    if (error || !data) {
+      console.error('Error pausing task:', error);
+      return;
+    }
+    const next = [...taskPauses, toPauseRange(data)].sort((a, b) => a.start.localeCompare(b.start));
+    setTaskPauses(next);
+    refreshStreakAfterPauseChange(taskId, next);
+  };
+
+  const resumeTask = async (taskId: string) => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const active = taskPauses.find((r) => r.taskId === taskId && todayStr >= r.start && todayStr <= r.end);
+    if (!active) return;
+    // Paused from today (or later): nothing was ever paused, so drop it.
+    // Otherwise close it yesterday so today is a normal day again.
+    if (active.start >= todayStr) {
+      await removePause(active.id);
+      return;
+    }
+    const yesterday = format(new Date(Date.now() - 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+    const next = taskPauses.map((r) => (r.id === active.id ? { ...r, end: yesterday } : r));
+    setTaskPauses(next);
+    const { error } = await supabase.from('pause_ranges').update({ end_date: yesterday }).eq('id', active.id);
+    if (error) console.error('Error resuming task:', error);
+    refreshStreakAfterPauseChange(taskId, next);
+  };
 
   /**
    * Every date that is streak-neutral for `task`: explicit days off, dates
@@ -217,7 +305,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
    * changed value depending on whether it was recomputed on load, on
    * completion, or on undo.
    */
-  const excludedDatesFor = (task: Task, completions?: { date: string; earnedAmount: number }[]): Set<string> => {
+  const excludedDatesFor = (
+    task: Task,
+    completions?: { date: string; earnedAmount: number }[],
+    pauses: PauseRange[] = pausesFor(task.id),
+  ): Set<string> => {
     const source = completions ?? task.completions;
     const earned = new Set(source.filter((c) => c.earnedAmount > 0).map((c) => c.date));
     const out = new Set<string>();
@@ -232,10 +324,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const [sid, d] = key.split('|');
       if (subtaskIds.has(sid)) addIfNeutral(d);
     }
-    if (pauseRanges.length > 0) {
+    if (pauses.length > 0) {
       const dates = source.map((c) => c.date).concat(task.startDate);
       const from = dates.reduce((a, b) => (a < b ? a : b), task.startDate);
-      for (const d of pausedDatesIn(pauseRanges, from, format(new Date(), 'yyyy-MM-dd'))) addIfNeutral(d);
+      for (const d of pausedDatesIn(pauses, from, format(new Date(), 'yyyy-MM-dd'))) addIfNeutral(d);
     }
     return out;
   };
@@ -389,7 +481,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         // Fetched rather than read from state: the hydrating effects have not
         // committed by the time this runs, so state would still be empty here
         // and the on-load streak repair would ignore every skip.
-        const [storedDayOff, storedMissed, storedPauses] = await Promise.all([
+        const [storedDayOff, storedMissed, { vacations: storedPauses, taskPauses: storedTaskPauses }] = await Promise.all([
           fetchSkipSet(deviceId),
           fetchMissedSet(deviceId),
           fetchPauseRanges(deviceId),
@@ -397,6 +489,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         setDayOffSet(storedDayOff);
         setSubtaskMissedSet(storedMissed);
         setPauseRanges(storedPauses);
+        setTaskPauses(storedTaskPauses);
 
         const excludedByTask = new Map<string, Set<string>>();
         const pausedDays = storedPauses.length
@@ -424,7 +517,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           const cleanExcluded = new Set<string>();
           for (const d of excluded) if (!successDates.has(d)) cleanExcluded.add(d);
           for (const d of pausedDays) if (!successDates.has(d)) cleanExcluded.add(d);
-          const correctStreak = computeCurrentStreak(task, task.completions, todayStr, cleanExcluded, storedPauses);
+          const taskPausesForThis = pausesForTask(storedPauses, storedTaskPauses, task.id);
+          if (taskPausesForThis !== storedPauses) {
+            const own = storedTaskPauses.filter((r) => r.taskId === task.id);
+            for (const d of pausedDatesIn(own, '0000-01-01', todayStr)) if (!successDates.has(d)) cleanExcluded.add(d);
+          }
+          const correctStreak = computeCurrentStreak(task, task.completions, todayStr, cleanExcluded, taskPausesForThis);
           if (correctStreak !== task.currentStreak) {
             console.log(`Fixing streak for "${task.name}": ${task.currentStreak} → ${correctStreak}`);
             supabase.from('tasks').update({ current_streak: correctStreak }).eq('id', task.id);
@@ -570,7 +668,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   /** Due by the task's own schedule, and not inside a vacation window. */
   const isTaskDueOnDate = (task: Task, date: Date) => {
-    if (isPausedOn(pauseRanges, dateKey(date))) return false;
+    if (isPausedOn(pausesFor(task.id), dateKey(date))) return false;
     return isTaskDueOn(task, date);
   };
 
@@ -678,7 +776,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const priorSuccessDates = task.completions
         .filter((c) => c.earnedAmount > 0 && c.date !== dateStr)
         .map((c) => c.date);
-      const rawBase = computeAtLeastRawStreak(task, priorSuccessDates, dateStr, unit, pauseRanges);
+      const rawBase = computeAtLeastRawStreak(task, priorSuccessDates, dateStr, unit, pausesFor(task.id));
       baseStreak = Number.isFinite(cycleLength) && cycleLength > 0
         ? rawBase % cycleLength
         : rawBase;
@@ -689,7 +787,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // it to 0, so ticking yesterday the next morning restarted the streak
       // at 1 (Dinner went 7 days straight and showed 1).
       const prior = task.completions.filter((c) => c.date < dateStr);
-      baseStreak = computeCurrentStreak(task, prior, dateStr, excludedDatesFor(task, prior), pauseRanges);
+      baseStreak = computeCurrentStreak(task, prior, dateStr, excludedDatesFor(task, prior), pausesFor(task.id));
     }
 
     const newStreak = baseStreak + 1;
@@ -819,7 +917,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       remainingCompletions,
       todayStr,
       excludedDatesFor(task, remainingCompletions),
-      pauseRanges,
+      pausesFor(task.id),
     );
 
     const newWalletBalance = wallet - completion.earnedAmount;
@@ -1016,7 +1114,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       completionsWithoutSkip,
       format(new Date(), 'yyyy-MM-dd'),
       excludedDatesFor(task, completionsWithoutSkip),
-      pauseRanges,
+      pausesFor(task.id),
     );
 
     // Optimistic UI update
@@ -1209,8 +1307,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
    * has not been met yet.
    */
   const isScheduledOn = (task: Task, date: Date, dateStr: string): boolean => {
-    // Paused days show nothing and demand nothing.
-    if (isPausedOn(pauseRanges, dateStr)) return false;
+    // Paused days (a vacation, or this task paused) show nothing and demand nothing.
+    if (isPausedOn(pausesFor(task.id), dateStr)) return false;
     // A flexible task that has already met its quota for the period drops off
     // the list for the rest of that period rather than nagging every day.
     if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') {
@@ -1458,7 +1556,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           remaining,
           format(new Date(), 'yyyy-MM-dd'),
           excludedDatesFor(parentTask, remaining),
-          pauseRanges,
+          pausesFor(parentTask.id),
         );
         setTasks((prev) =>
           prev.map((t) =>
@@ -1631,6 +1729,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         addPause,
         removePause,
         isPausedDate,
+        taskPauses,
+        pausesFor,
+        pauseTask,
+        resumeTask,
         traitXp,
         xpEvents,
 

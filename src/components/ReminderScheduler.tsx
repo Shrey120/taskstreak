@@ -11,21 +11,21 @@ import { initReminders, rescheduleReminders } from '@/lib/notificationScheduler'
  * baked-in wording from going stale after a completion.
  */
 export function ReminderScheduler() {
-  const { tasks, pauseRanges, dayOffSet } = useTasks();
+  const { tasks, pauseRanges, taskPauses, dayOffSet } = useTasks();
 
   useEffect(() => {
     initReminders().catch((e) => console.warn('[reminders] init failed', e));
   }, []);
 
   useEffect(() => {
-    const ctx = { pauseRanges, dayOffSet };
+    const ctx = { pauseRanges, taskPauses, dayOffSet };
     rescheduleReminders(tasks, ctx).catch((e) => console.warn('[reminders] schedule failed', e));
     // Re-run periodically so "tomorrow" fires get scheduled after midnight.
     const iv = window.setInterval(() => {
       rescheduleReminders(tasks, ctx).catch(() => undefined);
     }, 15 * 60_000);
     return () => window.clearInterval(iv);
-  }, [tasks, pauseRanges, dayOffSet]);
+  }, [tasks, pauseRanges, taskPauses, dayOffSet]);
 
   return null;
 }

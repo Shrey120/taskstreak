@@ -7,7 +7,7 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isTaskDueOnDateGeneric, getStreakCycleLength } from './streakUtils';
-import { isPausedOn, type PauseRange } from './schedule';
+import { isPausedOn, taskPauseOn, type PauseRange } from './schedule';
 import { DIFFICULTY_MULTIPLIERS, type Task } from '@/types/task';
 
 export const REMINDER_LEAD_MIN = 5;
@@ -37,6 +37,8 @@ const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 /** Extra device state the alerts need; both are streak-neutral exclusions. */
 export interface ReminderContext {
   pauseRanges: PauseRange[];
+  /** Single-task pauses: that task stays quiet, everything else still fires. */
+  taskPauses?: PauseRange[];
   dayOffSet: Set<string>;
 }
 
@@ -88,6 +90,7 @@ function buildFires(tasks: Task[], now: Date, ctx: ReminderContext): Fire[] {
       const hm = parseHHmm(task.scheduledTime);
       if (!hm) continue;
       if (!isTaskDueOnDateGeneric(task, day)) continue;
+      if (taskPauseOn(ctx.taskPauses ?? [], task.id, key)) continue;
 
       const taskAt = new Date(day);
       taskAt.setHours(hm.h, hm.m, 0, 0);
@@ -151,6 +154,7 @@ function buildEveningFires(tasks: Task[], now: Date, ctx: ReminderContext): Fire
       const streak = task.currentStreak ?? 0;
       if (streak < RISK_AT || streak >= cycle) continue;
       if (!isTaskDueOnDateGeneric(task, day)) continue;
+      if (taskPauseOn(ctx.taskPauses ?? [], task.id, key)) continue;
       if (ctx.dayOffSet.has(`${task.id}|${key}`)) continue;
       if (task.completions.some((c) => c.date === key && c.earnedAmount > 0)) continue;
 

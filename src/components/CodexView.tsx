@@ -230,6 +230,15 @@ export function CodexView() {
             <span className="text-primary font-semibold">no streak breaks</span>. One holiday
             cannot wipe out every habit at once.
           </Block>
+          <Block title="Pause just one task">
+            Tap <B>⏸</B> on a task in <B>All tasks</B> to pause only that task — eggs during a
+            9-day festival, gym for a month — while everything else carries on. Pause it from
+            today or a later date, until a set date or <B>until you resume it</B>. While paused it
+            is hidden from your days, sends no reminders and can't be missed. Its streak, pay and
+            XP stay <span className="text-primary font-semibold">frozen exactly as they were</span>,
+            so on resume it carries on from the same place. A flexible quota task's week only
+            counts the days it wasn't paused.
+          </Block>
           <Block title="How it affects the numbers">
             Paused days are removed from the denominator everywhere — they are not misses. The
             Report counts them separately and excludes them from consistency.
@@ -237,8 +246,8 @@ export function CodexView() {
           <Block title="Skip vs. fail vs. pause">
             <B>Skip</B> marks one task streak-neutral for one day — for a quota task you will
             still hit, or a genuine one-off reason. <B>Fail (✗)</B> costs money and XP and breaks
-            the streak. <B>Pause</B> covers every task across a date range. Only Fail is a
-            penalty; the other two cost nothing.
+            the streak. <B>Vacation</B> pauses every task across a date range; <B>⏸ Pause</B> does
+            the same for one task. Only Fail is a penalty; the others cost nothing.
           </Block>
         </div>
       </section>

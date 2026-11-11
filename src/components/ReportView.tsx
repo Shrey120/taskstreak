@@ -38,12 +38,12 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 }
 
 export function ReportView() {
-  const { tasks, xpEvents, pauseRanges, dayOffSet, traitXp } = useTasks();
+  const { tasks, xpEvents, pauseRanges, taskPauses, dayOffSet, traitXp } = useTasks();
   const [unit, setUnit] = useState<ReportUnit>('week');
 
   const report = useMemo(
-    () => buildPeriodReport(tasks, xpEvents, pauseRanges, dayOffSet, unit),
-    [tasks, xpEvents, pauseRanges, dayOffSet, unit],
+    () => buildPeriodReport(tasks, xpEvents, pauseRanges, dayOffSet, unit, new Date(), taskPauses),
+    [tasks, xpEvents, pauseRanges, taskPauses, dayOffSet, unit],
   );
 
   const rate = report.due > 0 ? Math.round((report.completed / report.due) * 100) : 0;

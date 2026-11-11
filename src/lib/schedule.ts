@@ -140,12 +140,36 @@ export function isTaskDueOn(task: Task, date: Date): boolean {
 // Vacation / pause ranges
 // ---------------------------------------------------------------------------
 
-/** Inclusive `yyyy-MM-dd` range during which every task is off the hook. */
+/**
+ * Inclusive `yyyy-MM-dd` range during which tasks are off the hook. Without a
+ * `taskId` it's a whole-app vacation; with one it pauses only that task.
+ * `end` is OPEN_END for a task paused "until I resume".
+ */
 export interface PauseRange {
   id: string;
   start: string;
   end: string;
   label?: string;
+  taskId?: string;
+}
+
+/** `end` of a pause with no end date yet (stored as NULL). */
+export const OPEN_END = '9999-12-31';
+
+/**
+ * Every pause that applies to one task: all whole-app vacations plus that
+ * task's own pauses. Anything deciding whether a specific task is due, or
+ * whether a day breaks its streak, must use this rather than the vacations
+ * alone.
+ */
+export function pausesForTask(vacations: PauseRange[], taskPauses: PauseRange[], taskId: string): PauseRange[] {
+  const own = taskPauses.filter((r) => r.taskId === taskId);
+  return own.length ? vacations.concat(own) : vacations;
+}
+
+/** The task's own pause covering `dateStr`, if any (vacations not included). */
+export function taskPauseOn(taskPauses: PauseRange[], taskId: string, dateStr: string): PauseRange | undefined {
+  return taskPauses.find((r) => r.taskId === taskId && dateStr >= r.start && dateStr <= r.end);
 }
 
 export function isPausedOn(ranges: PauseRange[], dateStr: string): boolean {

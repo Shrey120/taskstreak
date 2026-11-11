@@ -1,6 +1,6 @@
 import { Task } from '@/types/task';
 import { TraitId, TRAITS } from '@/lib/xpUtils';
-import { isTaskDueOn, PauseRange, isPausedOn } from '@/lib/schedule';
+import { isTaskDueOn, PauseRange, isPausedOn, taskPauseOn } from '@/lib/schedule';
 import { toKey, fromKey } from '@/lib/periodUtils';
 
 /**
@@ -98,6 +98,7 @@ function measure(
   pauses: PauseRange[],
   skipSet: Set<string>,
   today: string,
+  taskPauses: PauseRange[] = [],
 ): Window {
   const w: Window = {
     earned: 0, lost: 0, completed: 0, due: 0,
@@ -132,6 +133,8 @@ function measure(
       if (task.frequencyType === 'at-least-weekly' || task.frequencyType === 'at-least-monthly') continue;
       if (!isTaskDueOn(task, date)) continue;
       if (skipSet.has(`${task.id}|${key}`)) continue;
+      // A paused task owed nothing that day, so it can't be missed.
+      if (taskPauseOn(taskPauses, task.id, key)) continue;
       w.due++;
       if (!completion || completion.earnedAmount <= 0) {
         w.missed.set(task.id, (w.missed.get(task.id) || 0) + 1);
@@ -148,13 +151,14 @@ export function buildPeriodReport(
   skipSet: Set<string>,
   unit: ReportUnit,
   ref: Date = new Date(),
+  taskPauses: PauseRange[] = [],
 ): PeriodReport {
   const today = toKey(new Date());
   const { start, end } = periodBounds(ref, unit);
   const prev = previousBounds(start, unit);
 
-  const cur = measure(tasks, start, end, pauses, skipSet, today);
-  const old = measure(tasks, prev.start, prev.end, pauses, skipSet, today);
+  const cur = measure(tasks, start, end, pauses, skipSet, today, taskPauses);
+  const old = measure(tasks, prev.start, prev.end, pauses, skipSet, today, taskPauses);
 
   const xpIn = (from: string, to: string) => {
     const totals = {} as Record<TraitId, number>;
